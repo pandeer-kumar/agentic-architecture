@@ -1,0 +1,334 @@
+{
+  "server": "servicenow",
+  "provenance": "in-house (Table API, CMDB API); vendor MCP optional",
+  "transport": "streamable-http",
+  "auth": "OAuth 2.0 per user; integration user for scheduled jobs",
+  "rate_limit": "instance rate-limit rules; honour 429",
+  "tools": [
+    {
+      "name": "servicenow_records_search_to_resultset",
+      "description": "Store ALL records of a table matching an encoded query in the record store (offset pagination ordered by sys_id; X-Total-Count reconciled).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "type": "string",
+            "enum": [
+              "incident",
+              "change_request",
+              "problem",
+              "sc_req_item",
+              "cmdb_ci"
+            ]
+          },
+          "encoded_query": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          },
+          "query_spec_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "encoded_query",
+          "fields",
+          "window",
+          "max_records",
+          "query_spec_id"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "servicenow_record_get",
+      "description": "Fetch one record by number or sys_id with display values.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "type": "string",
+            "enum": [
+              "incident",
+              "change_request",
+              "problem",
+              "sc_req_item",
+              "cmdb_ci"
+            ]
+          },
+          "number_or_sys_id": {
+            "type": "string"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "concise",
+              "detailed"
+            ]
+          }
+        },
+        "required": [
+          "table",
+          "number_or_sys_id",
+          "response_format"
+        ]
+      },
+      "returns": "record (fenced)"
+    },
+    {
+      "name": "servicenow_change_approvals_to_resultset",
+      "description": "Store approval records (sysapproval_approver) for all change requests in a handle.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "change_handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          }
+        },
+        "required": [
+          "change_handle"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "servicenow_ci_relations_get",
+      "description": "Upstream/downstream CMDB relationships of a CI up to depth 3.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ci_sys_id": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ci_sys_id",
+          "depth"
+        ]
+      },
+      "returns": "relations"
+    },
+    {
+      "name": "servicenow_work_note_add",
+      "description": "Propose adding an internal work note.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "type": "string",
+            "enum": [
+              "incident",
+              "change_request",
+              "problem"
+            ]
+          },
+          "sys_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "sys_id",
+          "text"
+        ]
+      },
+      "returns": "pending_approval | ok"
+    },
+    {
+      "name": "servicenow_record_update",
+      "description": "Propose updating fields (state, assignment_group, close_code ...).",
+      "risk_tier": "high",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "type": "string",
+            "enum": [
+              "incident",
+              "change_request",
+              "problem"
+            ]
+          },
+          "sys_id": {
+            "type": "string"
+          },
+          "fields_json": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "sys_id",
+          "fields_json"
+        ]
+      },
+      "returns": "pending_approval | record"
+    },
+    {
+      "name": "servicenow_incident_create",
+      "description": "Propose creating an incident.",
+      "risk_tier": "high",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "short_description": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cmdb_ci": {
+            "type": "string"
+          },
+          "assignment_group": {
+            "type": "string"
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        },
+        "required": [
+          "short_description",
+          "assignment_group"
+        ]
+      },
+      "returns": "pending_approval | number"
+    }
+  ]
+}

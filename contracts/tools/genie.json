@@ -1,0 +1,86 @@
+{
+  "server": "genie",
+  "provenance": "Azure Databricks managed MCP (Genie space endpoint, Beta). Gateway aliases native tool names",
+  "transport": "streamable-http",
+  "auth": "Entra ID / Databricks OAuth (user-to-machine)",
+  "rate_limit": "low QPS (Conversation API best-effort, ~5 questions/min on free tier); gateway queue + 409 handling",
+  "tools": [
+    {
+      "name": "genie_space_ask",
+      "description": "Ask a natural-language analytics question to an approved Genie space. Returns Genie's answer text, generated SQL and a result handle when a table is returned.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "space_id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "space_id",
+          "question"
+        ]
+      },
+      "returns": "answer + sql + handle"
+    },
+    {
+      "name": "genie_result_to_resultset",
+      "description": "Store the full query result of a Genie message attachment in the record store.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "space_id": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "attachment_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "space_id",
+          "conversation_id",
+          "message_id",
+          "attachment_id"
+        ]
+      },
+      "returns": "handle_summary"
+    }
+  ]
+}

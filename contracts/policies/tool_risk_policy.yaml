@@ -1,0 +1,32 @@
+# Gateway risk policy (docs/10 §3). Tier defaults come from contracts/tools/*.json;
+# these rules can only RAISE a tier, never lower it.
+version: 2
+tiers:
+  read:     {approvals: 0, self_approve: true,  expiry_hours: null}
+  low:      {approvals: 0, self_approve: true,  expiry_hours: null}
+  medium:   {approvals: 1, self_approve: true,  expiry_hours: 24}
+  high:     {approvals: 1, self_approve: false, approver_role: approver, expiry_hours: 24}
+  critical: {approvals: 2, self_approve: false, approver_role: approver, distinct_approvers: true, expiry_hours: 8}
+escalations:
+  - id: bulk_writes
+    when: {batch_size_gt: 10}
+    raise_by: 1
+  - id: zendesk_public_reply
+    when: {tool: zendesk_ticket_comment_add, argument: {public: true}}
+    set_min: high
+  - id: injection_flagged_target
+    when: {target_record_flag: injection_suspected}
+    raise_by: 1
+  - id: production_ci_out_of_hours
+    when: {target_ci_environment: production, outside_business_hours: true}
+    set_min: high
+role_restrictions:
+  map_worker:   {tools: []}               # no tools at all
+  verifier:     {tools: []}               # no tools; fact re-computation (D5) is done by code
+  explorer:     {max_tier: read}
+  orchestrator: {max_tier: critical}      # proposes; approval decides
+limits:
+  max_records_per_resultset: 2000
+  max_inline_result_tokens: 25000
+  offload_threshold_tokens: 4000
+  offload_threshold_rows: 20

@@ -1,0 +1,326 @@
+{
+  "server": "jira",
+  "provenance": "in-house (Jira Cloud REST v3). Atlassian Rovo MCP optional for interactive use",
+  "transport": "streamable-http",
+  "auth": "OAuth 2.0 (3LO) per user; service account for scheduled jobs",
+  "rate_limit": "gateway token bucket, honour Retry-After on 429",
+  "tools": [
+    {
+      "name": "jira_issues_search_to_resultset",
+      "description": "Run a JQL search and store ALL matching issues in the record store. Paginates with nextPageToken until exhausted. Returns a handle summary with completeness proof, never the issues themselves. Use absolute dates in JQL that match the frozen window.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jql": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          },
+          "query_spec_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jql",
+          "fields",
+          "window",
+          "max_records",
+          "query_spec_id"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "jira_issues_count_approx",
+      "description": "Approximate count for a JQL query (Jira approximate-count). Use only as a bound, never as the reported count.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jql": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jql"
+        ]
+      },
+      "returns": "{approximate_count}"
+    },
+    {
+      "name": "jira_issue_get",
+      "description": "Fetch one issue by key with resolved human-readable fields. concise = key fields; detailed = all fields + last 20 comments.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "issue_key": {
+            "type": "string"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "concise",
+              "detailed"
+            ]
+          },
+          "include_comments": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "issue_key",
+          "response_format",
+          "include_comments"
+        ]
+      },
+      "returns": "issue (fenced untrusted text)"
+    },
+    {
+      "name": "jira_fields_list",
+      "description": "List field ids, names and types available in a project (use before writing JQL with custom fields).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_key"
+        ]
+      },
+      "returns": "field catalogue"
+    },
+    {
+      "name": "jira_issue_comment_add",
+      "description": "Propose adding a comment to an issue. Requires approval; returns pending_approval.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "issue_key": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "visibility_group": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_key",
+          "body"
+        ]
+      },
+      "returns": "pending_approval | comment id"
+    },
+    {
+      "name": "jira_issue_link",
+      "description": "Propose linking two issues with a link type name (e.g. 'Relates', 'Duplicate').",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "from_key": {
+            "type": "string"
+          },
+          "to_key": {
+            "type": "string"
+          },
+          "link_type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_key",
+          "to_key",
+          "link_type"
+        ]
+      },
+      "returns": "pending_approval | link id"
+    },
+    {
+      "name": "jira_issue_transition",
+      "description": "Propose moving an issue through a workflow transition (e.g. close).",
+      "risk_tier": "high",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "issue_key": {
+            "type": "string"
+          },
+          "transition_name": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_key",
+          "transition_name"
+        ]
+      },
+      "returns": "pending_approval | new status"
+    },
+    {
+      "name": "jira_issue_create",
+      "description": "Propose creating an issue.",
+      "risk_tier": "high",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project_key": {
+            "type": "string"
+          },
+          "issue_type": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "project_key",
+          "issue_type",
+          "summary"
+        ]
+      },
+      "returns": "pending_approval | issue key"
+    }
+  ]
+}

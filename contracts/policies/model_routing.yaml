@@ -1,0 +1,45 @@
+# Model routing per agent role. Changes go through the eval gate (docs/11 §6).
+# Model IDs are exact strings; never append date suffixes.
+version: 3
+defaults:
+  thinking: {type: adaptive}          # current models: adaptive only (disabled/budget_tokens are rejected)
+  streaming: true                     # long inputs/outputs; use get_final_message()
+  # Server-side refusal fallback (beta). On platforms without it, the harness retries client-side
+  # and records the served model in llm_calls.model.
+  betas: [server-side-fallback-2026-07-01]
+  fallbacks: default
+  tool_choice: auto                   # forced tool_choice (any/tool) returns 400 on Opus 5.5 / Sonnet 5.5
+roles:
+  orchestrator:
+    model: claude-opus-5-5
+    effort: high                      # Opus 5.5 defaults to medium; set explicitly
+    max_tokens: 64000
+  map_worker:
+    model: claude-sonnet-5-5          # or claude-haiku-5-5 for pure field extraction, if eval shows parity
+    effort: low
+    max_tokens: 8000
+    output: structured_json           # output_config.format with the rubric schema
+  second_opinion:
+    model: claude-haiku-5-5           # different tier from map_worker on purpose (independence)
+    effort: medium
+    max_tokens: 8000
+    output: structured_json
+  adjudicator:
+    model: claude-opus-5-5
+    effort: high
+    max_tokens: 16000
+    output: structured_json
+  verifier:
+    model: claude-opus-5-5
+    effort: high
+    max_tokens: 32000
+    output: structured_json
+  explorer:
+    model: claude-sonnet-5-5
+    effort: medium
+    max_tokens: 32000
+  judge:                              # online / offline LLM-as-judge (docs/11)
+    model: claude-opus-5-5
+    effort: high
+    max_tokens: 16000
+    output: structured_json

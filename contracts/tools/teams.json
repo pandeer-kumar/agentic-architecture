@@ -1,0 +1,100 @@
+{
+  "server": "teams",
+  "provenance": "in-house (Microsoft Graph); destinations allow-listed",
+  "transport": "streamable-http",
+  "auth": "Entra ID app (ChannelMessage.Send via RSC) ",
+  "rate_limit": "Graph throttling",
+  "tools": [
+    {
+      "name": "teams_channels_list",
+      "description": "List allow-listed Teams channels the agent may post to.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      },
+      "returns": "channels"
+    },
+    {
+      "name": "teams_user_lookup",
+      "description": "Resolve a person by e-mail or display name to a Teams user (for @mentions).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "returns": "users"
+    },
+    {
+      "name": "teams_message_post",
+      "description": "Propose posting a message (optionally with @mentions) to an allow-listed channel.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "channel_ref": {
+            "type": "string"
+          },
+          "text_md": {
+            "type": "string"
+          },
+          "mention_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "channel_ref",
+          "text_md",
+          "mention_user_ids"
+        ]
+      },
+      "returns": "pending_approval | message id"
+    }
+  ]
+}

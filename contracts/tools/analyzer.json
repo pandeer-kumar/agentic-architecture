@@ -1,0 +1,449 @@
+{
+  "server": "analyzer",
+  "provenance": "in-house; deterministic computation over the record store",
+  "transport": "in-process / streamable-http",
+  "auth": "platform internal (job-scoped token)",
+  "rate_limit": "n/a",
+  "tools": [
+    {
+      "name": "analyzer_resultset_describe",
+      "description": "Row count, columns, completeness proof and field value distributions of a handle.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          }
+        },
+        "required": [
+          "handle"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "analyzer_records_sample",
+      "description": "Return up to 25 records (fenced, sanitised) from a handle, optionally filtered. For inspection only, never for counting.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "n": {
+            "type": "integer"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "handle",
+          "n",
+          "filters",
+          "fields"
+        ]
+      },
+      "returns": "records"
+    },
+    {
+      "name": "analyzer_resultset_filter",
+      "description": "Create a new handle with rows matching structured filters (field op value).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "in",
+                    "not_in",
+                    "contains",
+                    "gte",
+                    "lt",
+                    "is_null",
+                    "not_null"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "op",
+                "value"
+              ]
+            }
+          }
+        },
+        "required": [
+          "handle",
+          "filters"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "analyzer_resultset_union",
+      "description": "Union handles and dedupe by a key expression (e.g. normalised change number).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Result-set handle, e.g. rs_01HZX3K9"
+            }
+          },
+          "dedupe_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handles",
+          "dedupe_key"
+        ]
+      },
+      "returns": "handle_summary + duplicate stats"
+    },
+    {
+      "name": "analyzer_resultset_join",
+      "description": "Join two handles on keys; returns matched / left-only / right-only handles and counts.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "left": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "right": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "left_key": {
+            "type": "string"
+          },
+          "right_key": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "inner",
+              "left",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "left",
+          "right",
+          "left_key",
+          "right_key",
+          "mode"
+        ]
+      },
+      "returns": "3 handles + counts"
+    },
+    {
+      "name": "analyzer_classify",
+      "description": "Run the batched map phase over a handle with a versioned rubric. Long-running: returns a progress handle; final labels are stored as annotations.",
+      "risk_tier": "low",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "rubric_id": {
+            "type": "string"
+          },
+          "only_undecided": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handle",
+          "rubric_id",
+          "only_undecided"
+        ]
+      },
+      "returns": "classification job id + progress"
+    },
+    {
+      "name": "analyzer_aggregate",
+      "description": "Compute a fact: count/sum/min/max/count_distinct grouped by fields, over a handle and optional label filter. The only valid source of numbers in answers.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "in",
+                    "not_in",
+                    "contains",
+                    "gte",
+                    "lt",
+                    "is_null",
+                    "not_null"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "op",
+                "value"
+              ]
+            }
+          },
+          "group_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metric": {
+            "type": "string",
+            "enum": [
+              "count",
+              "count_distinct",
+              "sum",
+              "min",
+              "max"
+            ]
+          },
+          "metric_field": {
+            "type": "string"
+          },
+          "label_filter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "metric"
+        ]
+      },
+      "returns": "fact {fact_id, value, sql}"
+    },
+    {
+      "name": "analyzer_list_create",
+      "description": "Define a rendered list (placeholder L-n) over a handle: filters, columns, sort. The renderer expands it from the database.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string",
+            "description": "Result-set handle, e.g. rs_01HZX3K9"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "filters",
+          "columns",
+          "sort"
+        ]
+      },
+      "returns": "list id"
+    },
+    {
+      "name": "analyzer_export",
+      "description": "Export a handle or list to CSV or XLSX; returns a download link valid for 24h.",
+      "risk_tier": "low",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "xlsx"
+            ]
+          }
+        },
+        "required": [
+          "source_id",
+          "format"
+        ]
+      },
+      "returns": "export id + url"
+    }
+  ]
+}

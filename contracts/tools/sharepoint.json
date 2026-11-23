@@ -1,0 +1,237 @@
+{
+  "server": "sharepoint",
+  "provenance": "in-house (Microsoft Graph). Microsoft SharePoint MCP server (preview) optional",
+  "transport": "streamable-http",
+  "auth": "Entra ID delegated (on-behalf-of) per user; Sites.Selected for service account",
+  "rate_limit": "Graph throttling; honour Retry-After",
+  "tools": [
+    {
+      "name": "sharepoint_search",
+      "description": "Search documents and pages the user can access. Returns titles, paths, modified date, short snippets.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "site_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "file_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "site_urls",
+          "file_types",
+          "limit"
+        ]
+      },
+      "returns": "hits"
+    },
+    {
+      "name": "sharepoint_document_get",
+      "description": "Fetch a document's text (or PDF) for citation-enabled reading. max_chars caps text; large files are chunked by the gateway.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "drive_item_id": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "text",
+              "pdf"
+            ]
+          },
+          "max_chars": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "drive_item_id",
+          "format",
+          "max_chars"
+        ]
+      },
+      "returns": "document block"
+    },
+    {
+      "name": "sharepoint_list_items_to_resultset",
+      "description": "Store all items of a SharePoint list matching an OData filter in the record store.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "site_url": {
+            "type": "string"
+          },
+          "list_name": {
+            "type": "string"
+          },
+          "odata_filter": {
+            "type": "string"
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "site_url",
+          "list_name",
+          "odata_filter",
+          "window",
+          "max_records"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "sharepoint_list_item_create",
+      "description": "Propose creating a list item (e.g. change log entry).",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "site_url": {
+            "type": "string"
+          },
+          "list_name": {
+            "type": "string"
+          },
+          "fields_json": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "list_name",
+          "fields_json"
+        ]
+      },
+      "returns": "pending_approval | item id"
+    },
+    {
+      "name": "sharepoint_file_upload",
+      "description": "Propose uploading a generated report (from analyzer_export) to a folder.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "site_url": {
+            "type": "string"
+          },
+          "folder_path": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "export_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "folder_path",
+          "file_name",
+          "export_id"
+        ]
+      },
+      "returns": "pending_approval | web url"
+    }
+  ]
+}

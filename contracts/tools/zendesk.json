@@ -1,0 +1,279 @@
+{
+  "server": "zendesk",
+  "provenance": "in-house (Zendesk Support REST API); no GA first-party MCP server as of Oct 2026",
+  "transport": "streamable-http",
+  "auth": "OAuth 2.0 per user; API token for service account",
+  "rate_limit": "account limit per plan; search export 100 req/min; honour Retry-After",
+  "tools": [
+    {
+      "name": "zendesk_tickets_search_to_resultset",
+      "description": "Run a Zendesk search query and store ALL matching tickets. Uses the export search endpoint (cursor pagination) so results are not capped at 1,000. Returns a handle summary.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          },
+          "query_spec_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query",
+          "window",
+          "max_records",
+          "query_spec_id"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "zendesk_tickets_count",
+      "description": "Exact result count for a search query (search count endpoint).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "returns": "{count}"
+    },
+    {
+      "name": "zendesk_ticket_get",
+      "description": "Fetch one ticket; detailed includes comments (public and internal flagged).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket_id": {
+            "type": "integer"
+          },
+          "response_format": {
+            "type": "string",
+            "enum": [
+              "concise",
+              "detailed"
+            ]
+          },
+          "include_comments": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "response_format",
+          "include_comments"
+        ]
+      },
+      "returns": "ticket (fenced untrusted text)"
+    },
+    {
+      "name": "zendesk_ticket_comment_add",
+      "description": "Propose a comment. public=true is customer-visible and is high risk; internal notes are medium.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket_id": {
+            "type": "integer"
+          },
+          "body": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ticket_id",
+          "body",
+          "public"
+        ]
+      },
+      "returns": "pending_approval | comment id"
+    },
+    {
+      "name": "zendesk_ticket_update",
+      "description": "Propose updating status, priority, assignee or tags.",
+      "risk_tier": "high",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "pending",
+              "hold",
+              "solved"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "urgent"
+            ]
+          },
+          "assignee_email": {
+            "type": "string"
+          },
+          "tags_add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags_remove": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ticket_id"
+        ]
+      },
+      "returns": "pending_approval | ticket"
+    },
+    {
+      "name": "zendesk_tickets_merge",
+      "description": "Propose merging source tickets into a target ticket. Irreversible.",
+      "risk_tier": "critical",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target_ticket_id": {
+            "type": "integer"
+          },
+          "source_ticket_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "target_comment": {
+            "type": "string"
+          },
+          "source_comment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_ticket_id",
+          "source_ticket_ids",
+          "target_comment",
+          "source_comment"
+        ]
+      },
+      "returns": "pending_approval | job status"
+    }
+  ]
+}

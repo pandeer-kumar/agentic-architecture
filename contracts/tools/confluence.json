@@ -1,0 +1,107 @@
+{
+  "server": "confluence",
+  "provenance": "Atlassian Rovo MCP (official, remote) behind the gateway, aliased; in-house fallback",
+  "transport": "streamable-http",
+  "auth": "OAuth 2.1 per user",
+  "rate_limit": "Atlassian limits; honour Retry-After",
+  "tools": [
+    {
+      "name": "confluence_pages_search",
+      "description": "Search Confluence with CQL; returns titles, spaces, URLs, excerpts.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cql": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cql",
+          "limit"
+        ]
+      },
+      "returns": "hits"
+    },
+    {
+      "name": "confluence_page_get",
+      "description": "Fetch a page body as text for citation-enabled reading.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "page_id": {
+            "type": "string"
+          },
+          "max_chars": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page_id",
+          "max_chars"
+        ]
+      },
+      "returns": "document block"
+    },
+    {
+      "name": "confluence_page_comment_add",
+      "description": "Propose a footer comment on a page.",
+      "risk_tier": "medium",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "page_id": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_id",
+          "body"
+        ]
+      },
+      "returns": "pending_approval | comment id"
+    }
+  ]
+}

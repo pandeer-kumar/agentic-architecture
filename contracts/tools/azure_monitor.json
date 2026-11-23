@@ -1,0 +1,164 @@
+{
+  "server": "azure_monitor",
+  "provenance": "in-house (Azure Resource Manager Activity Log + Log Analytics query API)",
+  "transport": "streamable-http",
+  "auth": "Managed identity with Reader + Log Analytics Reader",
+  "rate_limit": "ARM / Log Analytics throttling",
+  "tools": [
+    {
+      "name": "azure_monitor_activity_log_to_resultset",
+      "description": "Store Azure Activity Log write/delete operations for resource types (e.g. Microsoft.Network/*) in the window. Use to find network changes that have no ticket.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "subscription_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resource_type_prefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subscription_ids",
+          "resource_type_prefixes",
+          "window",
+          "max_records"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "azure_monitor_log_analytics_query_to_resultset",
+      "description": "Run a KQL query against an approved workspace over the window and store rows.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "workspace_id": {
+            "type": "string"
+          },
+          "kql": {
+            "type": "string"
+          },
+          "window": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "start_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end_utc": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "field": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start_utc",
+              "end_utc",
+              "field"
+            ]
+          },
+          "max_records": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "kql",
+          "window",
+          "max_records"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "azure_monitor_resource_get",
+      "description": "Get a resource's properties and tags by resource id.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id"
+        ]
+      },
+      "returns": "resource"
+    }
+  ]
+}

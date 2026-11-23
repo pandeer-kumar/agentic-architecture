@@ -1,0 +1,127 @@
+{
+  "server": "postgres",
+  "provenance": "Postgres MCP Pro (restricted mode) or in-house; read-only role on a replica",
+  "transport": "streamable-http",
+  "auth": "DB role itsm_agent_ro via vault; statement_timeout 15s",
+  "rate_limit": "max 4 concurrent queries per job",
+  "tools": [
+    {
+      "name": "postgres_schema_list",
+      "description": "List schemas, tables and views the agent role can read, with row-count estimates.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "returns": "catalogue"
+    },
+    {
+      "name": "postgres_table_describe",
+      "description": "Columns, types, keys, comments and 3 sample rows of a table.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "table": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "returns": "table description"
+    },
+    {
+      "name": "postgres_query_to_resultset",
+      "description": "Run a single read-only SELECT (inside a READ ONLY transaction with timeout) and store rows in the record store.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": true,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sql": {
+            "type": "string"
+          },
+          "max_rows": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sql",
+          "max_rows"
+        ]
+      },
+      "returns": "handle_summary"
+    },
+    {
+      "name": "postgres_query_explain",
+      "description": "EXPLAIN (no ANALYZE) a SELECT to check cost before running it.",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sql": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ]
+      },
+      "returns": "plan"
+    }
+  ]
+}
