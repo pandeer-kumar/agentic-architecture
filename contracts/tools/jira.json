@@ -1,6 +1,6 @@
 {
   "server": "jira",
-  "provenance": "in-house (Jira Cloud REST v3). Atlassian Rovo MCP optional for interactive use",
+  "provenance": "custom-built (Jira Cloud REST v3: enhanced JQL search, approximate-count, issue APIs)",
   "transport": "streamable-http",
   "auth": "OAuth 2.0 (3LO) per user; service account for scheduled jobs",
   "rate_limit": "gateway token bucket, honour Retry-After on 429",

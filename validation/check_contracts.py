@@ -11,6 +11,7 @@ Checks:
   C6 docs/07 tool tables list exactly the contract tools (no drift)
   C7 every example input in docs/07 §5 validates against its tool schema
   C8 exactly 10 servers
+  C9 harness tools (contracts/harness_tools.json) are strict-compatible and do not clash with MCP tools
 Exit code 0 only if every check passes.
 """
 import json, re, sys, pathlib
@@ -80,16 +81,16 @@ for f in servers:
         if t["bulk_to_resultset"] and tier != "read":
             fail(f"C5 {n}: bulk tools must be read tier")
 
-doc = (ROOT / "docs/07-mcp-servers-and-tools.md").read_text()
-section3 = doc.split("## 3. Tools by server", 1)[1].split("## 4.", 1)[0]
+doc = (ROOT / "docs/06-tool-routing-and-mcp-servers.md").read_text()
+section3 = doc.split("## 6. Tools by server", 1)[1].split("### 6.11", 1)[0]
 doc_tools = set(re.findall(r"^\| `([a-z0-9_]+)` \|", section3, re.M))
 if doc_tools != set(tools):
     fail(f"C6 doc/contract drift: only in doc {sorted(doc_tools - set(tools))}, only in contracts {sorted(set(tools) - doc_tools)}")
 
-section5 = doc.split("## 5.", 1)[1].split("## 6.", 1)[0]
+section5 = doc.split("## 7.", 1)[1].split("## 8.", 1)[0]
 examples = re.findall(r"^\| `([a-z0-9_]+)` \| `(\{.*\})` \|$", section5, re.M)
 if not examples:
-    fail("C7 no examples found in docs/07 §5")
+    fail("C7 no examples found in docs/06 §7")
 for name, raw in examples:
     try:
         inst = json.loads(raw)
@@ -103,7 +104,20 @@ for name, raw in examples:
     for e in errs:
         fail(f"C7 example for {name}: {e.message}")
 
-print(f"servers={len(servers)} tools={len(tools)} doc_tools={len(doc_tools)} examples={len(examples)}")
+harness = json.loads((ROOT / "contracts/harness_tools.json").read_text())["tools"]
+for t in harness:
+    n = t["name"]
+    if n in tools:
+        fail(f"C9 harness tool {n} clashes with an MCP tool")
+    try:
+        Draft202012Validator.check_schema(t["input_schema"])
+    except Exception as e:
+        fail(f"C9 {n}: invalid schema: {e}")
+    walk(t["input_schema"], "", n)
+h11 = doc.split("### 6.11", 1)[1].split("## 7.", 1)[0]
+if set(re.findall(r"^\| `([a-z_]+)` \|", h11, re.M)) != {t["name"] for t in harness}:
+    fail("C9 docs/06 §6.11 out of sync with contracts/harness_tools.json")
+print(f"servers={len(servers)} tools={len(tools)} harness_tools={len(harness)} doc_tools={len(doc_tools)} examples={len(examples)}")
 for m in failures:
     print("FAIL", m)
 print("CONTRACTS OK" if not failures else f"{len(failures)} FAILURE(S)")

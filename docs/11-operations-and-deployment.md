@@ -1,50 +1,20 @@
-# 12 — Operations & Deployment (single org, self-hosted)
+# 11 — Operations & Deployment (single org, self-hosted)
+
+Explains ARCHITECTURE §15 (deployment and operations).
 
 ## 1. Deployment topology
 
-```mermaid
-flowchart TB
-  subgraph Edge
-    LB[Ingress / WAF] --> SS[session-service x2]
-  end
-  subgraph Compute[Kubernetes namespace itsm-agent]
-    SS
-    HW[harness-workers x3..10<br/>HPA on queue depth]
-    GW[mcp-gateway x2]
-    EX[action-executor x2]
-    REG[registry-onboarding x1]
-    MCP[in-house MCP servers<br/>jira, zendesk, sharepoint, servicenow,<br/>teams, azure_monitor, analyzer]
-    SBX[probe sandbox<br/>isolated node pool, no egress by default]
-  end
-  subgraph Data
-    PG[(PostgreSQL 16 HA<br/>primary + sync replica)]
-    RR[(read replica<br/>for postgres MCP)]
-    OBJ[(object storage<br/>exports, fixtures, transcripts)]
-    VAULT[(Vault / Key Vault)]
-  end
-  subgraph External
-    CLAUDE[[Claude API / cloud platform endpoint]]
-    SRC[[Jira, Zendesk, SharePoint, ServiceNow,<br/>Confluence, Databricks Genie, Azure]]
-  end
-  SS --> PG
-  HW --> PG
-  HW --> CLAUDE
-  HW --> GW
-  EX --> GW
-  GW --> MCP
-  GW --> VAULT
-  MCP --> SRC
-  REG --> SBX
-  GW --> PG
-  MCP --> RR
-  SS --> OBJ
-```
+![Deployment](../diagrams/ops_01_deployment.png)
 
 | Service | Scaling signal | Notes |
 |---|---|---|
 | session-service | CPU / connections | SSE streams progress from `session_events` (LISTEN/NOTIFY) |
 | harness-workers | `job_steps` ready-queue depth | Stateless; any worker resumes any job |
-| mcp-gateway | Request rate | Holds per-source token buckets (shared via Postgres advisory locks or Redis if needed) |
+| llm-gateway | Model request rate | Per-user and per-job-class token buckets over the organisation's model rate limits |
+| tool-gateway | Request rate | Per-source token buckets (shared via Postgres advisory locks, Redis if needed) |
+| mcp-servers (10) | Per-server request rate | One deployment per custom server; independent scaling and rollout |
+| memory-service | Retrieval rate | Hybrid search over `memory_items`; promotion and review jobs |
+| approval-service | Low | Approval cards (console + Teams), decisions |
 | action-executor | Approved-actions queue | Separate deployment so write credentials are isolated from read paths |
 | registry-onboarding | Low | Probe sandbox on an isolated node pool |
 
@@ -55,11 +25,11 @@ upstream. Nothing else.
 
 | Artifact | Location | Change process |
 |---|---|---|
-| Prompts (system, roles, verifier) | git `prompts/` | PR + eval gate (doc 11 §6) |
+| Prompts (system, roles, verifier) | git `prompts/` | PR + eval gate (doc 10 §6) |
 | Rubrics, playbooks | DB (versioned) + git export | Approver sign-off + eval gate |
 | Model routing | `contracts/policies/model_routing.yaml` | PR + eval gate |
 | Tool risk policy | `contracts/policies/tool_risk_policy.yaml` | PR + security review |
-| MCP servers | DB via onboarding (doc 08), or GitOps drop | Admin approval |
+| MCP servers | DB via onboarding (doc 07), or GitOps drop | Admin approval |
 
 ## 3. Observability
 
@@ -71,11 +41,11 @@ Dashboards:
 
 | Dashboard | Key panels |
 |---|---|
-| Accuracy | Banner distribution, downgrade rate, D3/D4 failure rate pre-revision, verifier contradiction rate, second-opinion disagreement, human audit precision/recall (doc 06 §6) |
-| Throughput | Jobs/hour, p50/p95 job time by shape (doc 02 §6), queue depth, source API latency & 429s |
+| Accuracy | Banner distribution, downgrade rate, D3/D4 failure rate pre-revision, verifier contradiction rate, second-opinion disagreement, human audit precision/recall (doc 05 §6) |
+| Throughput | Jobs/hour, p50/p95 job time by shape (ARCHITECTURE §6.3), queue depth, source API latency & 429s |
 | Cost | Cost per job, per role, cache hit ratio (`cache_read_input_tokens / input_tokens`), map tokens per record |
 | Safety | Approvals pending/approved/rejected, time-to-approve, policy denials, injection flags, MCP drift suspensions |
-| Context | Orchestrator context size per step (alert > 120k), ledger resets per job |
+| Context | Orchestrator context size per step (alert > 120k), epochs per job, reset triggers |
 
 Alerts: downgrade rate > 5 % (1 h), second-opinion disagreement > 3 % (per rubric, daily), any
 `golden_counts` nightly failure, audit chain verification failure (P1), MCP server suspended,
@@ -97,7 +67,7 @@ source completeness `incomplete` rate > 2 %.
 
 | Lever | Setting |
 |---|---|
-| Use the LLM only for judgement | Deterministic pre-filter (doc 05 §5) — typically halves map volume |
+| Use the LLM only for judgement | Deterministic pre-filter (doc 04 §5) — typically halves map volume |
 | Prompt caching | Stable prefixes; rubric + schema cached across all batches of a job |
 | Effort per role | Orchestrator/verifier `high`, workers `low` |
 | Async batch mode | Message Batches API for scheduled reports |
@@ -108,7 +78,7 @@ source completeness `incomplete` rate > 2 %.
 
 Assumption-driven; validate with real traffic before committing budget.
 
-| Shape (doc 02 §6) | Share | Est. cost/job | Est. daily cost |
+| Shape (ARCHITECTURE §6.3) | Share | Est. cost/job | Est. daily cost |
 |---|---|---|---|
 | Single lookup | 50 % | $0.02–0.10 | $10–50 |
 | Field-filtered list | 25 % | $0.10–0.40 | $25–100 |

@@ -1,6 +1,6 @@
 {
   "server": "postgres",
-  "provenance": "Postgres MCP Pro (restricted mode) or in-house; read-only role on a replica",
+  "provenance": "custom-built (read-only role on a reporting replica; READ ONLY transactions, statement_timeout)",
   "transport": "streamable-http",
   "auth": "DB role itsm_agent_ro via vault; statement_timeout 15s",
   "rate_limit": "max 4 concurrent queries per job",

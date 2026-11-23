@@ -1,29 +1,14 @@
-# 08 — MCP Auto-Onboarding (discover → probe → score → approve → enable → watch)
+# 07 — MCP Auto-Onboarding (discover → probe → score → approve → enable → watch)
+
+Explains ARCHITECTURE §11 (⑥ MCP onboarding).
 
 Goal: new MCP servers can be added with **no code change and no restart**, while nothing reaches
 the agent until an admin approves it. Everything except the approval decision is automated.
 
 ## 1. Lifecycle
 
-```mermaid
-stateDiagram-v2
-  [*] --> discovered
-  discovered --> intake_failed: metadata / provenance invalid
-  discovered --> probing: intake ok
-  probing --> probe_failed: handshake or static checks fail
-  probing --> pending_review: probe report + risk score ready
-  pending_review --> rejected: admin rejects
-  pending_review --> canary: admin approves (tiers, roles, creds bound)
-  canary --> enabled: canary window passes eval gate
-  canary --> suspended: errors / eval regression
-  enabled --> suspended: drift detected (tool list or schema changed)
-  suspended --> pending_review: re-probe
-  enabled --> retired: admin retires
-  rejected --> [*]
-  retired --> [*]
-```
-
-Each transition is a row in `mcp_server_events`; the current state is `mcp_servers.status` (doc 09).
+![MCP onboarding lifecycle](../diagrams/mcp_01_onboarding.png)
+Each transition is a row in `mcp_server_events`; the current state is `mcp_servers.status` (doc 08).
 
 ## 2. Discovery sources
 
@@ -32,7 +17,7 @@ Each transition is a row in `mcp_server_events`; the current state is `mcp_serve
 | **Internal sub-registry** mirroring the official MCP Registry (`registry.modelcontextprotocol.io`, API v0.1) | Scheduled sync of `server.json` entries filtered by an allow-list of publishers/namespaces (e.g. verified `io.github.<org>/…`, vendor DNS namespaces) | Low — metadata only |
 | **Admin submission** | URL of a remote server or a `server.json` in the console | Medium |
 | **GitOps drop** | `mcp-servers/<name>.yaml` merged to the config repo (reviewed PR) | Medium–high (code review happened) |
-| **Capability gap** (agent-initiated) | When tool search returns nothing suitable, the orchestrator may call `registry_suggest_server(capability, example_task)`. It **creates a candidate only**; it can never install, enable or authenticate a server | Low |
+| **Capability gap** (agent-initiated) | When the tool router finds nothing suitable for a `request_tools(capability)` call, the orchestrator may call `registry_suggest_server(capability, example_task)`. It **creates a candidate only**; it can never install, enable or authenticate a server | Low |
 | **Vendor change** | A remote server already enabled announces new tools (`notifications/tools/list_changed`) | Treated as drift (§7) |
 
 The official registry is not queried live by the agent: the MCP Registry guidance is that host
@@ -77,7 +62,7 @@ with a **probe identity** against a test tenant where available.
 
 ## 5. Risk scoring
 
-Per tool, the gateway proposes a tier (`read` … `critical`, doc 07). Annotations only ever **raise**
+Per tool, the gateway proposes a tier (`read` … `critical`, doc 06). Annotations only ever **raise**
 a proposed tier, never lower it — the MCP spec says annotations are untrusted unless the server is
 trusted.
 
@@ -104,14 +89,14 @@ The admin decides:
 - the final risk tier and allowed roles per tool,
 - the credential binding (vault path, OAuth app, per-user vs service identity),
 - rate limits and the result-offload threshold override (if any),
-- a `namespace` prefix if the server's tool names don't follow the convention (the gateway aliases them, e.g. Rovo `searchConfluenceUsingCql` → `confluence_pages_search`).
+- a `namespace` prefix if the server's tool names don't follow the convention (the gateway aliases them, e.g. a camelCase `listIncidents` → `pagerduty_incidents_list`).
 
 On approval:
 
 1. Config is written (`mcp_servers`, `mcp_tools`, `tool_policies`) and the gateway reloads via
    Postgres `LISTEN/NOTIFY` — no restart.
-2. Tools enter the deferred tool index. Because a conversation's `tools` list is frozen (doc 03 §2.1),
-   new tools are available from the **next conversation** (new session or ledger reset), never by
+2. Tools enter the tool router's catalog. Because an epoch's `tools` list is frozen (doc 01 §4),
+   new tools are available from the **next epoch** (new job, epoch reset, or `request_tools`), never by
    editing a running one.
 3. **Canary**: enabled for the admin group only, for 7 days or 50 successful calls, whichever is later.
 
@@ -120,7 +105,7 @@ On approval:
 | Test | Pass criterion |
 |---|---|
 | Smoke tasks | 5 generated tasks per enabled tool (from tool descriptions, run in the test tenant) complete with the expected tool called |
-| Tool-selection regression | Existing golden suite (doc 11): tool-selection accuracy does not drop > 1 point (new tools can confuse selection) |
+| Tool-selection regression | Existing golden suite (doc 10): tool-selection accuracy does not drop > 1 point (new tools can confuse selection) |
 | Error behaviour | Invalid-input calls return `isError` with a message, not a crash or hang |
 | Size behaviour | Large results are offloaded, never > 25k tokens in context |
 
@@ -131,7 +116,7 @@ On approval:
 | `notifications/tools/list_changed` from an enabled server | Re-list immediately |
 | Daily scheduled re-list of every enabled server | Same |
 | New tool appears | Stored as `pending_review`, **not visible** to the agent |
-| Existing tool's description or schema hash changes | Tool → `suspended` until re-reviewed; the agent keeps the last approved definition out of tool search |
+| Existing tool's description or schema hash changes | Tool → `suspended` until re-reviewed; the tool router stops offering it |
 | Tool removed | Disabled; dependent playbooks flagged |
 | Error rate > 20 % over 1 h or p95 latency 3× baseline | Server → `suspended`, admin notified |
 | Package/remote version change | Treated as a new version: re-probe, diff report, review |
@@ -163,7 +148,7 @@ offload_threshold_tokens: 4000
 ## 10. Generic adapter for servers we did not write
 
 The gateway applies to every onboarded server what our own connectors do natively:
-result offloading (doc 03 §3), untrusted-text fencing, size caps, write → approval conversion
+result offloading (doc 06 §3), untrusted-text fencing, size caps, write → approval conversion
 (write-tier tools return `pending_approval` first, and the call is replayed only after approval),
 audit, and per-user credential injection. That is what makes "a wide variety of MCP servers"
 safe to add without writing new code for each.

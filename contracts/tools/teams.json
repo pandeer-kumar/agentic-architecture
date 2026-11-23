@@ -1,6 +1,6 @@
 {
   "server": "teams",
-  "provenance": "in-house (Microsoft Graph); destinations allow-listed",
+  "provenance": "custom-built (Microsoft Graph channel messages; destinations allow-listed)",
   "transport": "streamable-http",
   "auth": "Entra ID app (ChannelMessage.Send via RSC) ",
   "rate_limit": "Graph throttling",

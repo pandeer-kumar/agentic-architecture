@@ -89,7 +89,7 @@ CREATE TABLE session_events (
   seq         integer NOT NULL CHECK (seq >= 1),
   event_type  text NOT NULL CHECK (event_type IN (
                 'user_message', 'model_request', 'model_response', 'tool_call', 'tool_result',
-                'approval_requested', 'approval_decided', 'action_executed', 'ledger_reset',
+                'approval_requested', 'approval_decided', 'action_executed', 'epoch_reset',
                 'system_note', 'error')),
   job_id      uuid,                                   -- FK added after jobs exists
   payload     jsonb NOT NULL,
@@ -148,6 +148,153 @@ CREATE TABLE job_steps (
 CREATE INDEX job_steps_ready_idx ON job_steps (status, created_at) WHERE status = 'ready';
 CREATE TRIGGER job_steps_touch BEFORE UPDATE ON job_steps
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- 2b. Context engine: epochs, payload snapshots, content-addressed blobs (docs/01, docs/02)
+-- ---------------------------------------------------------------------
+CREATE TABLE epochs (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id        uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  agent_role    text NOT NULL DEFAULT 'orchestrator' CHECK (agent_role IN ('orchestrator', 'explorer')),
+  seq           integer NOT NULL CHECK (seq >= 1),
+  model         text NOT NULL,
+  tool_names    text[] NOT NULL,                       -- frozen tool set for the epoch
+  opened_at     timestamptz NOT NULL DEFAULT now(),
+  closed_at     timestamptz,
+  close_trigger text CHECK (close_trigger IN ('budget', 'tool_set_change', 'phase_boundary', 'turn_cap',
+                                              'prefix_change', 'model_switch', 'error_spiral', 'job_end')),
+  handoff       jsonb,                                 -- structured handoff written at close (doc 01 §5)
+  handoff_fallback boolean NOT NULL DEFAULT false,     -- deterministic fallback used after validator failures
+  turns         integer NOT NULL DEFAULT 0 CHECK (turns BETWEEN 0 AND 40),
+  input_tokens  bigint NOT NULL DEFAULT 0,
+  output_tokens bigint NOT NULL DEFAULT 0,
+  cache_read_tokens bigint NOT NULL DEFAULT 0,
+  UNIQUE (job_id, agent_role, seq),
+  CHECK ((closed_at IS NULL) = (close_trigger IS NULL)),
+  -- an epoch closed for any reason other than job end must leave a handoff for the next one
+  CHECK (closed_at IS NULL OR close_trigger = 'job_end' OR handoff IS NOT NULL)
+);
+-- at most one open epoch per job and role
+CREATE UNIQUE INDEX epochs_one_open_uq ON epochs (job_id, agent_role) WHERE closed_at IS NULL;
+
+-- Tools are frozen per epoch: the tool list may never change after the epoch is opened.
+CREATE OR REPLACE FUNCTION itsm.freeze_epoch_tools() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.tool_names IS DISTINCT FROM OLD.tool_names OR NEW.model IS DISTINCT FROM OLD.model THEN
+    RAISE EXCEPTION 'tools and model are frozen for an epoch; open a new epoch instead'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.closed_at IS NOT NULL THEN
+    RAISE EXCEPTION 'closed epochs are immutable' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER epochs_freeze BEFORE UPDATE ON epochs
+  FOR EACH ROW EXECUTE FUNCTION freeze_epoch_tools();
+
+CREATE TABLE content_blobs (
+  content_hash  text PRIMARY KEY CHECK (content_hash ~ '^[0-9a-f]{64}$'),
+  byte_size     integer NOT NULL CHECK (byte_size >= 0),
+  storage       text NOT NULL CHECK (storage IN ('inline', 'blob')),
+  inline_content text,
+  blob_uri      text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_used_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK ((storage = 'inline') = (inline_content IS NOT NULL)),
+  CHECK ((storage = 'blob') = (blob_uri IS NOT NULL)),
+  CHECK (storage = 'blob' OR byte_size <= 8192),
+  -- inline content must hash to its key (content addressing is verifiable)
+  CHECK (storage = 'blob' OR content_hash = encode(sha256(convert_to(inline_content, 'UTF8')), 'hex'))
+);
+
+CREATE TABLE context_snapshots (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id         uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  epoch_id       uuid REFERENCES epochs(id),           -- NULL for one-shot sub-agent calls
+  agent_role     text NOT NULL,
+  turn           integer NOT NULL CHECK (turn >= 1),
+  model_params   jsonb NOT NULL,                       -- model, max_tokens, thinking, effort, ...
+  manifest       jsonb NOT NULL CHECK (jsonb_typeof(manifest) = 'array' AND jsonb_array_length(manifest) >= 1),
+  token_estimate integer NOT NULL CHECK (token_estimate > 0),
+  token_actual   integer,
+  request_hash   text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  -- orchestrator payloads must respect the 120k budget (doc 01 §3.1)
+  CHECK (agent_role <> 'orchestrator' OR token_estimate <= 120000)
+);
+CREATE INDEX context_snapshots_epoch_idx ON context_snapshots (epoch_id, turn);
+CREATE TRIGGER context_snapshots_append_only BEFORE UPDATE OR DELETE ON context_snapshots
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+-- Every block in a manifest must exist in content_blobs (replayability).
+CREATE OR REPLACE FUNCTION itsm.check_manifest() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  missing text;
+BEGIN
+  SELECT m->>'content_hash' INTO missing
+  FROM jsonb_array_elements(NEW.manifest) m
+  WHERE NOT EXISTS (SELECT 1 FROM content_blobs b WHERE b.content_hash = m->>'content_hash')
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'manifest references unknown content blob %', coalesce(missing, '(null)')
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER context_snapshots_manifest BEFORE INSERT ON context_snapshots
+  FOR EACH ROW EXECUTE FUNCTION check_manifest();
+
+-- ---------------------------------------------------------------------
+-- 2c. Short-term memory: session state, referents, scratchpad (docs/03)
+-- ---------------------------------------------------------------------
+CREATE TABLE session_state (
+  session_id    uuid PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  summary       text NOT NULL DEFAULT '' CHECK (length(summary) <= 4000),   -- ≈ 600 tokens
+  user_tz       text NOT NULL,
+  active_goal   text,
+  filters       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  output_prefs  jsonb NOT NULL DEFAULT '{}'::jsonb,
+  version       integer NOT NULL DEFAULT 1 CHECK (version >= 1),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE session_referents (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  session_id    uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  referent_key  text NOT NULL CHECK (referent_key ~ '^ref-[0-9]+$'),
+  label         text NOT NULL,
+  kind          text NOT NULL CHECK (kind IN ('result_set', 'record', 'list', 'fact')),
+  target        text NOT NULL,                         -- handle, system:id, L-n, F-n
+  job_id        uuid NOT NULL REFERENCES jobs(id),
+  ordinal_map   jsonb NOT NULL DEFAULT '{}'::jsonb,    -- {"1": "NET-4411", "2": "CHG0031122"}
+  turn          integer NOT NULL CHECK (turn >= 1),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (session_id, referent_key)
+);
+
+CREATE TABLE scratchpad_entries (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  job_id        uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  owner         text NOT NULL DEFAULT 'orchestrator',  -- or a sub-agent run id
+  entry_type    text NOT NULL CHECK (entry_type IN ('finding', 'hypothesis', 'open_question', 'decision', 'todo', 'warning')),
+  text          text NOT NULL CHECK (length(text) BETWEEN 1 AND 300),
+  refs          text[] NOT NULL DEFAULT '{}',
+  supersedes_id bigint REFERENCES scratchpad_entries(id),
+  merged_from   bigint[] NOT NULL DEFAULT '{}',        -- compressor merges (refs preserved)
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  CHECK (entry_type <> 'finding' OR cardinality(refs) >= 1)
+);
+CREATE UNIQUE INDEX scratchpad_supersede_once_uq ON scratchpad_entries (supersedes_id) WHERE supersedes_id IS NOT NULL;
+CREATE TRIGGER scratchpad_append_only BEFORE UPDATE OR DELETE ON scratchpad_entries
+  FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+-- Active entries = not superseded and not merged into another entry.
+CREATE OR REPLACE VIEW itsm.v_scratchpad_active AS
+SELECT e.* FROM scratchpad_entries e
+WHERE NOT EXISTS (SELECT 1 FROM scratchpad_entries s WHERE s.supersedes_id = e.id)
+  AND NOT EXISTS (SELECT 1 FROM scratchpad_entries m WHERE e.id = ANY (m.merged_from));
 
 -- ---------------------------------------------------------------------
 -- 3. Data plane: query specs, result sets, records, annotations, facts
@@ -920,3 +1067,54 @@ SELECT a.id AS action_id, a.tool_name, a.risk_tier, a.required_approvals,
        j.user_id AS requester_id, a.preview, a.expires_at
 FROM actions a JOIN jobs j ON j.id = a.job_id
 WHERE a.status = 'pending_approval' AND a.expires_at > now();
+
+-- ---------------------------------------------------------------------
+-- 12. Scratchpad write rules that need the data-plane tables (docs/03 §3.3)
+-- ---------------------------------------------------------------------
+-- Refs must exist in the same job: 'fact:F-n', 'rs:<handle>', 'rec:<system>:<source_id>', 'sp:<id>'.
+-- Active entries per job/owner are capped at 40.
+CREATE OR REPLACE FUNCTION itsm.check_scratchpad_entry() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  r text;
+  active integer;
+BEGIN
+  FOREACH r IN ARRAY NEW.refs LOOP
+    IF r ~ '^fact:F-[0-9]+$' THEN
+      IF NOT EXISTS (SELECT 1 FROM facts WHERE job_id = NEW.job_id AND fact_key = substr(r, 6)) THEN
+        RAISE EXCEPTION 'scratchpad ref % does not exist in this job', r USING ERRCODE = 'check_violation';
+      END IF;
+    ELSIF r ~ '^rs:' THEN
+      IF NOT EXISTS (SELECT 1 FROM result_sets WHERE job_id = NEW.job_id AND handle = substr(r, 4)) THEN
+        RAISE EXCEPTION 'scratchpad ref % does not exist in this job', r USING ERRCODE = 'check_violation';
+      END IF;
+    ELSIF r ~ '^rec:[a-z_]+:.+$' THEN
+      IF NOT EXISTS (SELECT 1 FROM records rc JOIN result_sets rs ON rs.id = rc.result_set_id
+                     WHERE rs.job_id = NEW.job_id
+                       AND rc.source_system = split_part(r, ':', 2)
+                       AND rc.source_id = substr(r, length(split_part(r, ':', 2)) + 6)) THEN
+        RAISE EXCEPTION 'scratchpad ref % does not exist in this job', r USING ERRCODE = 'check_violation';
+      END IF;
+    ELSIF r ~ '^sp:[0-9]+$' THEN
+      IF NOT EXISTS (SELECT 1 FROM scratchpad_entries WHERE job_id = NEW.job_id AND id = substr(r, 4)::bigint) THEN
+        RAISE EXCEPTION 'scratchpad ref % does not exist in this job', r USING ERRCODE = 'check_violation';
+      END IF;
+    ELSE
+      RAISE EXCEPTION 'unknown scratchpad ref format %', r USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS
+     (SELECT 1 FROM scratchpad_entries WHERE id = NEW.supersedes_id AND job_id = NEW.job_id) THEN
+    RAISE EXCEPTION 'can only supersede an entry of the same job' USING ERRCODE = 'check_violation';
+  END IF;
+  SELECT count(*) INTO active FROM v_scratchpad_active WHERE job_id = NEW.job_id AND owner = NEW.owner;
+  IF NEW.supersedes_id IS NULL AND cardinality(NEW.merged_from) = 0 AND active >= 40 THEN
+    RAISE EXCEPTION 'scratchpad full (40 active entries); compress or supersede' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER scratchpad_check BEFORE INSERT ON scratchpad_entries
+  FOR EACH ROW EXECUTE FUNCTION check_scratchpad_entry();
+
+-- Model calls point at the exact payload snapshot that was sent.
+ALTER TABLE llm_calls ADD COLUMN snapshot_id uuid REFERENCES context_snapshots(id);

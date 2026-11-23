@@ -1,6 +1,6 @@
 {
   "server": "analyzer",
-  "provenance": "in-house; deterministic computation over the record store",
+  "provenance": "custom-built (deterministic computation over the record store)",
   "transport": "in-process / streamable-http",
   "auth": "platform internal (job-scoped token)",
   "rate_limit": "n/a",

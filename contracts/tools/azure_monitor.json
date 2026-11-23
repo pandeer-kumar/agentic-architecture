@@ -1,6 +1,6 @@
 {
   "server": "azure_monitor",
-  "provenance": "in-house (Azure Resource Manager Activity Log + Log Analytics query API)",
+  "provenance": "custom-built (Azure Resource Manager Activity Log + Log Analytics query API)",
   "transport": "streamable-http",
   "auth": "Managed identity with Reader + Log Analytics Reader",
   "rate_limit": "ARM / Log Analytics throttling",

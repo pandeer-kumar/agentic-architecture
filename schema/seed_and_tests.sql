@@ -413,4 +413,107 @@ FROM next WHERE s.id = next.id;
 SELECT pg_temp.ok((SELECT status FROM job_steps WHERE step_key = 's1') = 'running', 'T11.1 worker claims a ready step');
 SELECT pg_temp.expect_error($$UPDATE itsm.job_steps SET attempt = 4 WHERE step_key = 's1'$$, '23514', 'T11.2 attempts capped by max_attempts');
 
+-- ---------------------------------------------------------------------
+-- T12 Epochs (context engine)
+-- ---------------------------------------------------------------------
+INSERT INTO epochs (id, job_id, seq, model, tool_names)
+VALUES ('00000000-0000-0000-0000-0000000e0001', '00000000-0000-0000-0000-0000000000e1', 1, 'claude-opus-5-5',
+        ARRAY['analyzer_aggregate', 'jira_issues_search_to_resultset', 'ledger_update', 'request_tools']);
+SELECT pg_temp.expect_error($$INSERT INTO itsm.epochs (job_id, seq, model, tool_names)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 2, 'claude-opus-5-5', ARRAY['x_y'])$$, '23505', 'T12.1 only one open epoch per job and role');
+SELECT pg_temp.expect_error($$UPDATE itsm.epochs SET tool_names = tool_names || 'zendesk_ticket_get'::text
+  WHERE id = '00000000-0000-0000-0000-0000000e0001'$$, '23514', 'T12.2 tool set is frozen inside an epoch');
+SELECT pg_temp.expect_error($$UPDATE itsm.epochs SET turns = 41 WHERE id = '00000000-0000-0000-0000-0000000e0001'$$,
+  '23514', 'T12.3 turn cap (40) enforced');
+SELECT pg_temp.expect_error($$UPDATE itsm.epochs SET closed_at = now(), close_trigger = 'budget'
+  WHERE id = '00000000-0000-0000-0000-0000000e0001'$$, '23514', 'T12.4 epoch closed by a reset trigger must leave a handoff');
+UPDATE epochs SET closed_at = now(), close_trigger = 'tool_set_change',
+       handoff = '{"goal":"network changes","facts":[{"key":"F-1","value":666}],"next_step":"s6"}'
+WHERE id = '00000000-0000-0000-0000-0000000e0001';
+SELECT pg_temp.expect_error($$UPDATE itsm.epochs SET handoff = '{}' WHERE id = '00000000-0000-0000-0000-0000000e0001'$$,
+  '23514', 'T12.5 closed epochs are immutable');
+INSERT INTO epochs (id, job_id, seq, model, tool_names)
+VALUES ('00000000-0000-0000-0000-0000000e0002', '00000000-0000-0000-0000-0000000000e1', 2, 'claude-opus-5-5',
+        ARRAY['analyzer_aggregate', 'jira_issues_search_to_resultset', 'ledger_update', 'request_tools', 'zendesk_ticket_get']);
+SELECT pg_temp.ok(true, 'T12.6 new epoch opens with the expanded tool set');
+
+-- ---------------------------------------------------------------------
+-- T13 Payload snapshots and content-addressed blobs
+-- ---------------------------------------------------------------------
+SELECT pg_temp.expect_error($$INSERT INTO itsm.content_blobs (content_hash, byte_size, storage, inline_content)
+  VALUES (repeat('a', 64), 11, 'inline', '<ledger/>')$$, '23514', 'T13.1 inline blob must hash to its key');
+INSERT INTO content_blobs (content_hash, byte_size, storage, inline_content)
+SELECT encode(sha256(convert_to(t, 'UTF8')), 'hex'), octet_length(t), 'inline', t
+FROM (VALUES ('<system_core version="git:4f1a9c2">rules</system_core>'), ('<task_ledger>{"steps":[]}</task_ledger>')) v(t);
+INSERT INTO content_blobs (content_hash, byte_size, storage, blob_uri)
+VALUES (repeat('c', 64), 120000, 'blob', 'blob://payloads/cc/cccc');
+SELECT pg_temp.expect_error($$INSERT INTO itsm.content_blobs (content_hash, byte_size, storage, inline_content)
+  VALUES (repeat('d', 64), 20000, 'inline', 'x')$$, '23514', 'T13.2 blocks over 8 KB must go to the blob store');
+SELECT pg_temp.expect_error($$INSERT INTO itsm.context_snapshots (job_id, epoch_id, agent_role, turn, model_params, manifest, token_estimate, request_hash)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000e0002', 'orchestrator', 1, '{}',
+          '[{"pos":"system[0]","content_hash":"9999999999999999999999999999999999999999999999999999999999999999"}]', 5000, repeat('e', 64))$$,
+  '23503', 'T13.3 snapshot cannot reference a missing content blob');
+SELECT pg_temp.expect_error(format($$INSERT INTO itsm.context_snapshots (job_id, epoch_id, agent_role, turn, model_params, manifest, token_estimate, request_hash)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000e0002', 'orchestrator', 1, '{}',
+          '[{"pos":"system[0]","content_hash":"%s"}]', 130000, repeat('e', 64))$$,
+  (SELECT content_hash FROM itsm.content_blobs WHERE inline_content LIKE '<system_core%')),
+  '23514', 'T13.4 orchestrator payload over 120k tokens rejected');
+INSERT INTO context_snapshots (id, job_id, epoch_id, agent_role, turn, model_params, manifest, token_estimate, request_hash)
+SELECT '00000000-0000-0000-0000-00000000aa51', '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000e0002',
+       'orchestrator', 1, '{"model":"claude-opus-5-5","effort":"high"}',
+       jsonb_agg(jsonb_build_object('pos', 'block', 'content_hash', content_hash) ORDER BY content_hash), 41000, repeat('e', 64)
+FROM content_blobs;
+SELECT pg_temp.ok((SELECT count(*) FROM context_snapshots s, jsonb_array_elements(s.manifest) m
+                   JOIN content_blobs b ON b.content_hash = m->>'content_hash') = 3,
+  'T13.5 snapshot manifest fully resolvable from content blobs (replayable)');
+SELECT pg_temp.expect_error($$UPDATE itsm.context_snapshots SET token_actual = 1 WHERE id = '00000000-0000-0000-0000-00000000aa51'$$,
+  '42501', 'T13.6 snapshots are append-only');
+
+-- ---------------------------------------------------------------------
+-- T14 Short-term memory: session state, referents, scratchpad
+-- ---------------------------------------------------------------------
+INSERT INTO session_state (session_id, summary, user_tz, active_goal)
+VALUES ('00000000-0000-0000-0000-0000000000d1', 'User asked for network changes in the last 24h.', 'Asia/Kolkata', 'CAB compliance');
+SELECT pg_temp.expect_error($$UPDATE itsm.session_state SET summary = repeat('x', 4001)
+  WHERE session_id = '00000000-0000-0000-0000-0000000000d1'$$, '23514', 'T14.1 session summary bounded');
+INSERT INTO session_referents (session_id, referent_key, label, kind, target, job_id, ordinal_map, turn)
+VALUES ('00000000-0000-0000-0000-0000000000d1', 'ref-1', 'network changes in window', 'result_set', 'rs_01TEST',
+        '00000000-0000-0000-0000-0000000000e1', '{"1":"NET-3","2":"NET-6"}', 1);
+SELECT pg_temp.expect_error($$INSERT INTO itsm.session_referents (session_id, referent_key, label, kind, target, job_id, turn)
+  VALUES ('00000000-0000-0000-0000-0000000000d1', 'those', 'x', 'list', 'L-1', '00000000-0000-0000-0000-0000000000e1', 2)$$,
+  '23514', 'T14.2 referent key format enforced');
+
+SELECT pg_temp.expect_error($$INSERT INTO itsm.scratchpad_entries (job_id, entry_type, text)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 'finding', '666 network changes')$$, '23514', 'T14.3 finding without refs rejected');
+SELECT pg_temp.expect_error($$INSERT INTO itsm.scratchpad_entries (job_id, entry_type, text, refs)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 'finding', '700 network changes', ARRAY['fact:F-9'])$$,
+  '23514', 'T14.4 finding citing a fact that does not exist rejected');
+SELECT pg_temp.expect_error($$INSERT INTO itsm.scratchpad_entries (job_id, entry_type, text, refs)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 'finding', 'NET-99999 is a firewall change', ARRAY['rec:jira:NET-99999'])$$,
+  '23514', 'T14.5 finding citing a record outside this job rejected');
+SELECT pg_temp.expect_error($$INSERT INTO itsm.scratchpad_entries (job_id, entry_type, text, refs)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 'decision', 'x', ARRAY['https://evil.example'])$$,
+  '23514', 'T14.6 unknown ref format rejected');
+INSERT INTO scratchpad_entries (job_id, entry_type, text, refs) VALUES
+  ('00000000-0000-0000-0000-0000000000e1', 'finding', '666 network changes in window', ARRAY['fact:F-1', 'rs:rs_01TEST']),
+  ('00000000-0000-0000-0000-0000000000e1', 'finding', 'NET-3 is a firewall change', ARRAY['rec:jira:NET-3']),
+  ('00000000-0000-0000-0000-0000000000e1', 'hypothesis', 'emergency changes are logged after the fact', '{}'),
+  ('00000000-0000-0000-0000-0000000000e1', 'decision', 'CAB status = approval field', '{}');
+SELECT pg_temp.expect_error($$UPDATE itsm.scratchpad_entries SET text = 'edited' WHERE entry_type = 'hypothesis'$$,
+  '42501', 'T14.7 scratchpad entries cannot be edited (append-only)');
+INSERT INTO scratchpad_entries (job_id, entry_type, text, refs, supersedes_id)
+SELECT job_id, 'hypothesis', 'rejected: emergency changes are logged on time (checked)', '{}', id
+FROM scratchpad_entries WHERE entry_type = 'hypothesis';
+SELECT pg_temp.ok((SELECT count(*) FROM v_scratchpad_active WHERE job_id = '00000000-0000-0000-0000-0000000000e1') = 4,
+  'T14.8 superseding replaces the entry in the active view');
+INSERT INTO scratchpad_entries (job_id, entry_type, text)
+SELECT '00000000-0000-0000-0000-0000000000e1', 'todo', 'todo ' || g FROM generate_series(1, 36) g;
+SELECT pg_temp.expect_error($$INSERT INTO itsm.scratchpad_entries (job_id, entry_type, text)
+  VALUES ('00000000-0000-0000-0000-0000000000e1', 'todo', 'one too many')$$, '23514', 'T14.9 scratchpad capped at 40 active entries');
+INSERT INTO scratchpad_entries (job_id, entry_type, text, merged_from)
+SELECT '00000000-0000-0000-0000-0000000000e1', 'todo', 'merged todos 1-10',
+       ARRAY(SELECT id FROM scratchpad_entries WHERE text LIKE 'todo %' ORDER BY id LIMIT 10);
+SELECT pg_temp.ok((SELECT count(*) FROM v_scratchpad_active WHERE job_id = '00000000-0000-0000-0000-0000000000e1') = 31,
+  'T14.10 compressor merge frees capacity (40 -> 31 active)');
+
 SELECT 'ALL TESTS PASSED' AS result;

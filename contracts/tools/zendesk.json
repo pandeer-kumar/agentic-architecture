@@ -1,6 +1,6 @@
 {
   "server": "zendesk",
-  "provenance": "in-house (Zendesk Support REST API); no GA first-party MCP server as of Oct 2026",
+  "provenance": "custom-built (Zendesk Support REST: export search, search count, tickets, comments)",
   "transport": "streamable-http",
   "auth": "OAuth 2.0 per user; API token for service account",
   "rate_limit": "account limit per plan; search export 100 req/min; honour Retry-After",

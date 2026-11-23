@@ -1,0 +1,330 @@
+{
+  "description": "Harness-native tools (not MCP). Implemented inside the agent runtime; always available to the roles listed.",
+  "tools": [
+    {
+      "name": "plan_query_spec",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Emit the QuerySpec for this request. The harness resolves relative time to an absolute UTC window, validates sources and fields, and freezes it.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "type": "string"
+          },
+          "relative_window": {
+            "type": "string"
+          },
+          "window_field": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "system": {
+                  "type": "string",
+                  "enum": [
+                    "jira",
+                    "zendesk",
+                    "servicenow",
+                    "sharepoint",
+                    "confluence",
+                    "postgres",
+                    "genie",
+                    "azure_monitor"
+                  ]
+                },
+                "query": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "system",
+                "query",
+                "fields"
+              ]
+            }
+          },
+          "structured_criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rubric_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "intent",
+          "relative_window",
+          "window_field",
+          "sources",
+          "structured_criteria",
+          "rubric_id"
+        ]
+      }
+    },
+    {
+      "name": "ledger_update",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Change the status or notes of one step of the current job's ledger. Only allowed transitions are accepted.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "step_key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "done",
+              "blocked",
+              "skipped"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_key",
+          "status",
+          "notes"
+        ]
+      }
+    },
+    {
+      "name": "scratchpad_write",
+      "roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "description": "Append a typed scratchpad entry (finding, hypothesis, open_question, decision, todo, warning). Findings must cite refs from this job.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "entry_type": {
+            "type": "string",
+            "enum": [
+              "finding",
+              "hypothesis",
+              "open_question",
+              "decision",
+              "todo",
+              "warning"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "entry_type",
+          "text",
+          "refs",
+          "supersedes_id"
+        ]
+      }
+    },
+    {
+      "name": "request_tools",
+      "roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "description": "Ask for tools that are not in this epoch's tool set, by capability. The harness starts a new epoch with the extra tools if the router finds and allows them.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "reason"
+        ]
+      }
+    },
+    {
+      "name": "referent_resolve",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Resolve a phrase like 'those tickets' or 'the second one' to a referent id from this session.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "phrase": {
+            "type": "string"
+          },
+          "referent_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phrase",
+          "referent_id"
+        ]
+      }
+    },
+    {
+      "name": "memory_search",
+      "roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "description": "Search active long-term memory (hybrid vector + full text) beyond what was pre-loaded.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "semantic",
+                "episodic",
+                "preference"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query",
+          "kinds",
+          "limit"
+        ]
+      }
+    },
+    {
+      "name": "memory_propose",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Propose a long-term memory item. It goes through the promotion gate; semantic facts need human review.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "semantic",
+              "episodic",
+              "preference"
+            ]
+          },
+          "subject_key": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "org",
+              "user"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "subject_key",
+          "content",
+          "source_refs",
+          "scope"
+        ]
+      }
+    },
+    {
+      "name": "memory_flag_conflict",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Report that live data contradicts a memory item; lowers its confidence and opens a review.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "memory_id": {
+            "type": "string"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "evidence_refs",
+          "note"
+        ]
+      }
+    }
+  ]
+}

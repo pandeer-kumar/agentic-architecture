@@ -1,8 +1,8 @@
 {
   "server": "confluence",
-  "provenance": "Atlassian Rovo MCP (official, remote) behind the gateway, aliased; in-house fallback",
+  "provenance": "custom-built (Confluence Cloud REST: CQL search, page content)",
   "transport": "streamable-http",
-  "auth": "OAuth 2.1 per user",
+  "auth": "OAuth 2.0 (3LO) per user",
   "rate_limit": "Atlassian limits; honour Retry-After",
   "tools": [
     {

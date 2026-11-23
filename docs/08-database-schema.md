@@ -1,9 +1,11 @@
-# 09 — Database Schema
+# 08 — Database Schema
+
+Explains ARCHITECTURE §13 (data architecture).
 
 PostgreSQL 16 + pgvector 0.6+ is the single system of record. The DDL is
-[`schema/schema.sql`](../schema/schema.sql) (41 tables, schema `itsm`); the invariant tests are
+[`schema/schema.sql`](../schema/schema.sql) (47 tables, schema `itsm`); the invariant tests are
 [`schema/seed_and_tests.sql`](../schema/seed_and_tests.sql). Both were executed for this design;
-results are in doc 13.
+results are in doc 14.
 
 Design rule: **safety and accuracy invariants live in the database, not only in application code.**
 If a bug in the harness tries to verify an unchecked answer, execute an unapproved write, or enable a
@@ -11,36 +13,7 @@ drifted tool, the database refuses.
 
 ## 1. Entity map
 
-```mermaid
-erDiagram
-  users ||--o{ sessions : owns
-  sessions ||--o{ session_events : "append-only log"
-  sessions ||--o{ jobs : runs
-  jobs ||--o{ job_steps : "ledger / queue"
-  jobs ||--o{ query_specs : plans
-  query_specs ||--o{ result_sets : fetches
-  result_sets ||--o{ records : owns
-  result_sets ||--o{ result_set_members : contains
-  records ||--o{ result_set_members : "member of"
-  records ||--o{ record_annotations : labelled
-  rubrics ||--o{ record_annotations : defines
-  map_batches ||--o{ record_annotations : produced
-  jobs ||--o{ facts : computes
-  jobs ||--o{ answers : drafts
-  answers ||--o{ claims : asserts
-  claims ||--o{ claim_evidence : "cites"
-  facts ||--o{ claim_evidence : supports
-  records ||--o{ claim_evidence : supports
-  answers ||--o{ verifications : "triple check"
-  jobs ||--o{ actions : proposes
-  actions ||--o{ approvals : decided
-  mcp_servers ||--o{ mcp_tools : exposes
-  mcp_servers ||--o{ mcp_probe_reports : probed
-  mcp_servers ||--o{ mcp_server_events : lifecycle
-  memory_items ||--o{ memory_reads : retrieved
-  answers ||--o{ answer_memory_refs : used
-```
-
+![Data model](../diagrams/db_01_data_model.png)
 ## 2. Tables by area
 
 ### 2.1 Identity & RBAC
@@ -55,8 +28,23 @@ erDiagram
 |---|---|---|
 | `sessions` | Conversation container | — |
 | `session_events` | **Append-only** event log; the source of truth from which context is rebuilt | UPDATE/DELETE blocked by trigger (retention purge needs explicit `SET LOCAL itsm.retention_purge='on'`); unique `(session_id, seq)` |
-| `jobs` | One user request being processed; `ledger` JSONB (doc 03 §6), token budget, banner | `request_event` must reference the user turn |
+| `jobs` | One user request being processed; `ledger` JSONB (doc 03 §2.3), token budget, banner | `request_event` must reference the user turn |
 | `job_steps` | Durable queue + task ledger steps; claimed with `FOR UPDATE SKIP LOCKED` | `attempt ≤ max_attempts`; unique `(job_id, step_key)` |
+
+### 2.2a Context engine
+| Table | Purpose | Key invariants |
+|---|---|---|
+| `epochs` | One append-only model conversation per row: frozen tool set, model, close trigger, structured handoff, token totals | one open epoch per job and role; **tool set and model frozen**; ≤ 40 turns; closed by a reset trigger ⇒ handoff required; closed epochs immutable |
+| `content_blobs` | Content-addressed blocks (sha256): inline ≤ 8 KB, else blob-store URI | inline content must hash to its key |
+| `context_snapshots` | Manifest of every model request (block positions, hashes, tokens, cache marks, model params, request hash) | append-only; every manifest hash must exist in `content_blobs` (replayable); orchestrator payload ≤ 120k tokens |
+
+### 2.2b Short-term memory
+| Table | Purpose | Key invariants |
+|---|---|---|
+| `session_state` | Rolling summary, user tz, active goal, filters, output preferences | summary ≤ 4,000 chars |
+| `session_referents` | "those tickets" → handle / record / list / fact, with ordinal map | key format `ref-n`, unique per session |
+| `scratchpad_entries` | Typed job notes (finding, hypothesis, open_question, decision, todo, warning) | append-only; findings need refs; **refs must exist in the same job** (`fact:`, `rs:`, `rec:`, `sp:`); ≤ 40 active entries per owner; supersede once; compressor merges recorded in `merged_from` |
+| (view) `v_scratchpad_active` | Entries not superseded or merged | — |
 
 ### 2.3 Data plane
 | Table | Purpose | Key invariants |
@@ -93,7 +81,7 @@ erDiagram
 | `mcp_servers` | Registered servers + lifecycle status | remote must be `https://`; local (`stdio`) must be digest-pinned; no inline secrets in `auth`; `canary/enabled` requires approver; every status change logged to `mcp_server_events` |
 | `mcp_probe_reports` | Probe results and risk score | score 0–100 |
 | `mcp_tools` | Namespaced tools with schema hash and approved hash | name must be namespaced; `enabled` requires approver **and** `approved_schema_hash = schema_hash`; a hash change on an enabled tool auto-**suspends** it; lowering a risk tier requires a new approval |
-| `tool_policies` | Tool × role decisions (doc 10) | — |
+| `tool_policies` | Tool × role decisions (doc 09) | — |
 
 ### 2.7 Memory
 | Table | Purpose | Key invariants |
@@ -108,7 +96,7 @@ Indexes: HNSW (`vector_cosine_ops`) on embeddings, GIN on `tsv`, trigram GIN on 
 ### 2.8 Telemetry, audit, evaluation
 | Table | Purpose | Key invariants |
 |---|---|---|
-| `llm_calls`, `tool_calls` | Per-call tokens, cache hits, cost, latency, policy decision | `model` records the model actually served (fallbacks) |
+| `llm_calls`, `tool_calls` | Per-call tokens, cache hits, cost, latency, policy decision; `llm_calls.snapshot_id` points at the exact payload sent | `model` records the model actually served (fallbacks) |
 | `audit_log` | Tamper-evident **hash chain** of security-relevant events | append-only; `audit_verify()` returns the first broken row id |
 | `eval_cases`, `eval_runs`, `eval_results` | Golden sets, runs per harness version, per-trial results | unique `(suite, name)` |
 
@@ -123,7 +111,11 @@ needs-review counts — the coverage gate for the map phase.
 | `session_events` | 180 days (configurable for compliance) | Purge job with explicit opt-in setting; at volume, monthly partitions dropped |
 | `facts`, `answers`, `claims`, `verifications` | 1 year | Kept longer than records so verified answers stay auditable; evidence snippets are copied into `verifications.detail` |
 | `audit_log` | 7 years (policy-dependent) | Never purged by the app; archived with chain checkpoint |
-| `memory_items` | Until expired/deprecated + 90 days | Hygiene job (doc 04 §4) |
+| `memory_items` | Until expired/deprecated + 90 days | Hygiene job (doc 03 §4.4) |
+| `epochs`, `context_snapshots`, `content_blobs` | 180 days (same as `session_events`); blobs referenced by verified answers 1 year | Sweeper deletes unreferenced blobs daily (doc 02 §10) |
+| `session_state`, `session_referents` | Not reused after 7 days of inactivity; deleted with the session (180 days) | Cascade from `sessions` |
+| `scratchpad_entries` | Archived with the job; deleted with job retention | Cascade from `jobs` |
+| Personal data erasure | On request: preferences, sessions, snapshots and blobs for the user | Erasure job (open decision C7, doc 12) |
 
 ## 4. Operational notes
 

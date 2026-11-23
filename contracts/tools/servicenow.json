@@ -1,6 +1,6 @@
 {
   "server": "servicenow",
-  "provenance": "in-house (Table API, CMDB API); vendor MCP optional",
+  "provenance": "custom-built (Table API, CMDB relationship API)",
   "transport": "streamable-http",
   "auth": "OAuth 2.0 per user; integration user for scheduled jobs",
   "rate_limit": "instance rate-limit rules; honour 429",

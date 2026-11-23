@@ -1,25 +1,12 @@
-# 05 — Bulk Result Processing (100–2,000 records)
+# 04 — Bulk Result Processing (100–2,000 records)
+
+Explains ARCHITECTURE §9 (data plane and bulk processing).
 
 Target workload: *"any network change done in the last 24 hours"* → typically 100–500 records,
 design ceiling 2,000. The pipeline guarantees **exact counts**, **full coverage**, and **no copy
 errors** by keeping records in the data plane and letting the model do only the judgement steps.
 
-```mermaid
-flowchart LR
-  Q[1 Query spec<br/>absolute window] --> F[2 Fetch<br/>paginate to record store]
-  F --> P{3 Completeness<br/>proof}
-  P -- fail --> I[mark incomplete<br/>retry / tell user]
-  P -- pass --> N[4 Normalise<br/>canonical records]
-  N --> D[5 Deterministic<br/>pre-filter]
-  D -->|definite in/out| R
-  D -->|needs judgement| M[6 Map: batched<br/>classification]
-  M --> VAL{coverage +<br/>grounding valid?}
-  VAL -- no --> M
-  VAL -- yes --> R[7 Reduce: Analyzer SQL<br/>facts]
-  R --> W[8 Render: code-built<br/>tables + model narrative]
-  W --> VER[9 Verify<br/>doc 06]
-```
-
+![Bulk pipeline](../diagrams/bulk_01_pipeline.png)
 ## 1. Query spec (planning)
 
 The orchestrator does not call search tools with free text. It first emits a **QuerySpec** via
@@ -58,7 +45,7 @@ Validation rules (code, not model):
 ## 2. Fetch (connector-owned pagination)
 
 Bulk tools (`*_search_to_resultset`) paginate inside the connector and write straight to the record
-store. The model receives only the handle summary (doc 03 §3).
+store. The model receives only the handle summary (doc 06 §3).
 
 | Source | API used for bulk | Page strategy | Total available? |
 |---|---|---|---|
@@ -92,7 +79,7 @@ caveat). The proof is stored on the result set and shown in the answer.
 
 ## 4. Normalisation
 
-Every record becomes a canonical row (`records` table, doc 09):
+Every record becomes a canonical row (`records` table, doc 08):
 
 `source_system, source_id, source_url, title, body_text (sanitised, ≤ 8k chars), status,
 created_at, updated_at, event_at (the window field), fields (JSONB, raw selected fields),
@@ -165,7 +152,7 @@ string-length constraints are not supported in the schema). Coverage is therefor
 
 The grounding validator (V2) protects against **false positives** only: a positive label must quote
 real evidence. A wrong *negative* label needs no evidence, so validators alone cannot catch it — the
-offline simulation (doc 13 §3) showed 0.2–0.9 % residual false negatives after V1–V5 at a 1 %
+offline simulation (doc 14 §3) showed 0.2–0.9 % residual false negatives after V1–V5 at a 1 %
 label-flip rate. Missing a network change is the costly error for audit use cases, so second opinions
 are deliberately asymmetric:
 
@@ -200,7 +187,7 @@ GROUP BY r.source_system;
 
 Each fact row stores: `fact_id`, the SQL text and parameters, the input result-set ids and their
 `content_hash` digest, the result JSON, and `computed_at`. Re-running the SQL must reproduce the
-result exactly; the verifier does this (doc 06 §3).
+result exactly; the verifier does this (doc 05 §3).
 
 ## 8. Rendering the answer
 
@@ -226,13 +213,5 @@ result exactly; the verifier does this (doc 06 §3).
 | Orchestrator + verifier | ≈ 50–120k tokens total | Handles keep it flat in record count |
 
 The orchestrator's token use is **independent of record count** — that is the property that makes
-2,000 records as accurate as 20. Numbers above are planning estimates; doc 11 §4 defines the load
+2,000 records as accurate as 20. Numbers above are planning estimates; doc 10 §4 defines the load
 test that must confirm them before go-live.
-
-## 10. Optional optimisation: programmatic tool calling
-
-For multi-step lookups over many records (e.g. "for each of 300 changes, fetch the linked incident"),
-programmatic tool calling lets Claude script the loop in the code-execution container so the
-intermediate results never enter context. It is **not** required by this design — the Analyzer and
-bulk tools already keep intermediate data out of context — and it is incompatible with `strict`
-tools and MCP-connector tools, so it is reserved for harness-native tools where measured savings justify it.

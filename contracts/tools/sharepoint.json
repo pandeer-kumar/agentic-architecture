@@ -1,6 +1,6 @@
 {
   "server": "sharepoint",
-  "provenance": "in-house (Microsoft Graph). Microsoft SharePoint MCP server (preview) optional",
+  "provenance": "custom-built (Microsoft Graph: search, drive items, lists)",
   "transport": "streamable-http",
   "auth": "Entra ID delegated (on-behalf-of) per user; Sites.Selected for service account",
   "rate_limit": "Graph throttling; honour Retry-After",

@@ -1,4 +1,6 @@
-# 11 — Evaluation & Testing
+# 10 — Evaluation & Testing
+
+Explains ARCHITECTURE §16 (quality assurance).
 
 "Functioning and tested" means every layer has an automated test that can fail. Model-dependent
 behaviour is tested statistically (multiple trials), deterministic behaviour exactly.
@@ -7,10 +9,11 @@ behaviour is tested statistically (multiple trials), deterministic behaviour exa
 
 | Level | What | Tooling | Runs |
 |---|---|---|---|
-| L0 Schema invariants | DB constraints & triggers (approvals, drift, verification gate, memory review, audit chain) | `schema/seed_and_tests.sql` (70 assertions, doc 13) | Every commit |
+| L0 Schema invariants | DB constraints & triggers (approvals, drift, verification gate, memory review, audit chain) | `schema/seed_and_tests.sql` (92 assertions) + concurrency tests (doc 14) | Every commit |
 | L1 Contract tests | Tool JSON Schemas valid & strict-compatible; names/namespaces; doc ↔ contract sync; example inputs validate | `validation/check_contracts.py` | Every commit |
 | L2 Unit tests | Query-spec window resolution (DST, time zones, half-open ranges), batch validators V1–V5, D-checks, renderer, offloader, sanitiser | pytest | Every commit |
 | L3 Connector tests | Pagination, loop guards, rate-limit backoff, cursor expiry, dedupe against **recorded fixtures** (VCR-style) and a sandbox tenant per source | pytest + recorded HTTP | Every commit (fixtures), nightly (sandbox) |
+| L2b Context-engine tests | Payload determinism (same state → same `request_hash`); layer budgets; fencing escapes; epoch triggers; handoff validators incl. fallback; snapshot replay byte-identity; append-only check run in `error` mode | pytest + recorded snapshots | Every commit |
 | L4 Pipeline tests | End-to-end with fixtures and a **stub model** returning scripted outputs (incl. malformed ones) — proves the harness catches missing ids, ungrounded quotes, wrong numbers | pytest | Every commit |
 | L5 Model evals | Golden suites against real models (§3) | eval runner → `eval_runs` | Nightly + on every prompt/model/harness change |
 | L6 Load & chaos | 2,000-record jobs, worker kills, API 429 storms, cursor expiry | k6/locust + fault injection | Weekly + before release |
@@ -48,7 +51,9 @@ Example L4 cases with a stub model (deterministic, no API cost):
 | `cross_system` | 25 reconciliation questions (Jira ↔ ServiceNow ↔ Azure Activity Log) | Exact sets | matched/only-A/only-B sets exact |
 | `grounding` | 50 drafts with seeded errors (wrong number, invented id, unsupported absence claim, causal leap) + 50 correct drafts | Verifier verdicts vs labels | Verifier catches ≥ 98 % of seeded errors; false-reject ≤ 5 % |
 | `injection` | 40 records with embedded instructions (direct, encoded, multilingual, in attachments' text) | No unintended tool calls / proposals; flag raised | 0 unintended proposals |
-| `tool_selection` | 60 requests across all servers | Correct tool(s) chosen | ≥ 95 %; regression gate for MCP onboarding |
+| `tool_selection` | 60 requests across all servers | Router includes the needed tools in L0 (or the model obtains them via `request_tools`), and the model calls the right one | Router recall ≥ 98 %; tool choice ≥ 95 %; regression gate for MCP onboarding |
+| `memory_followups` | 30 multi-turn sessions ("those", "the second one", corrections) | Referents resolved to the right handle/record; no refetch when unnecessary | ≥ 97 % correct resolution |
+| `scratchpad_continuity` | 20 jobs forced through 2–3 epoch resets | Decisions and findings carried across epochs; no contradictory re-decisions | 100 % of recorded decisions honoured |
 | `abstention` | 20 unanswerable questions (missing permission, missing field, out-of-scope) | Says it can't verify | ≥ 95 % correct abstention, 0 fabricated answers |
 | `end_to_end` | 30 realistic requests incl. writes (approval stubbed) | LLM judge rubric + exact checks | judge ≥ 0.85 mean; all exact checks pass |
 
@@ -93,7 +98,7 @@ code, or MCP server set must pass:
 
 ## 7. Acceptance criteria mapping
 
-| NFR (doc 00) | Proven by |
+| NFR (ARCHITECTURE) | Proven by |
 |---|---|
 | NFR-ACC-1 count accuracy | `golden_counts` + schema tests T5.x |
 | NFR-ACC-2 coverage | Batch validator V1 + `label_coverage()` + T4.6 + Scale-2000 |

@@ -1,9 +1,9 @@
 {
   "server": "genie",
-  "provenance": "Azure Databricks managed MCP (Genie space endpoint, Beta). Gateway aliases native tool names",
+  "provenance": "custom-built (Databricks Genie Conversation API: start conversation, poll message, fetch query result)",
   "transport": "streamable-http",
-  "auth": "Entra ID / Databricks OAuth (user-to-machine)",
-  "rate_limit": "low QPS (Conversation API best-effort, ~5 questions/min on free tier); gateway queue + 409 handling",
+  "auth": "Entra ID / Databricks OAuth (on-behalf-of user)",
+  "rate_limit": "Conversation API is low-QPS (best-effort, ~5 questions/min on the free tier; only POSTs count); gateway queue + 409/429 handling",
   "tools": [
     {
       "name": "genie_space_ask",
