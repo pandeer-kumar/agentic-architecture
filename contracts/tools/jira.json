@@ -7,7 +7,7 @@
   "tools": [
     {
       "name": "jira_issues_search_to_resultset",
-      "description": "Run a JQL search and store ALL matching issues in the record store. Paginates with nextPageToken until exhausted. Returns a handle summary with completeness proof, never the issues themselves. Use absolute dates in JQL that match the frozen window.",
+      "description": "Store ALL Jira issues matching a JQL filter inside the frozen time window of the query spec. Write the JQL WITHOUT any date clause and WITHOUT ORDER BY; the connector adds the window (on the spec's window field) and stable ordering, and paginates with nextPageToken until exhausted. Returns a handle summary with a completeness proof, never the issues.",
       "risk_tier": "read",
       "annotations": {
         "readOnlyHint": true,
@@ -24,6 +24,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "query_spec_id": {
+            "type": "string"
+          },
           "jql": {
             "type": "string"
           },
@@ -33,41 +36,14 @@
               "type": "string"
             }
           },
-          "window": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "start_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "field": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "start_utc",
-              "end_utc",
-              "field"
-            ]
-          },
           "max_records": {
             "type": "integer"
-          },
-          "query_spec_id": {
-            "type": "string"
           }
         },
         "required": [
+          "query_spec_id",
           "jql",
-          "fields",
-          "window",
-          "max_records",
-          "query_spec_id"
+          "fields"
         ]
       },
       "returns": "handle_summary"

@@ -7,7 +7,7 @@
   "tools": [
     {
       "name": "servicenow_records_search_to_resultset",
-      "description": "Store ALL records of a table matching an encoded query in the record store (offset pagination ordered by sys_id; X-Total-Count reconciled).",
+      "description": "Store ALL records of a table matching an encoded query inside the frozen time window of the query spec. Write the encoded query WITHOUT date conditions and WITHOUT ORDERBY; the connector adds them, paginates by offset ordered by sys_id, and reconciles against X-Total-Count.",
       "risk_tier": "read",
       "annotations": {
         "readOnlyHint": true,
@@ -24,6 +24,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "query_spec_id": {
+            "type": "string"
+          },
           "table": {
             "type": "string",
             "enum": [
@@ -43,42 +46,15 @@
               "type": "string"
             }
           },
-          "window": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "start_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "field": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "start_utc",
-              "end_utc",
-              "field"
-            ]
-          },
           "max_records": {
             "type": "integer"
-          },
-          "query_spec_id": {
-            "type": "string"
           }
         },
         "required": [
+          "query_spec_id",
           "table",
           "encoded_query",
-          "fields",
-          "window",
-          "max_records",
-          "query_spec_id"
+          "fields"
         ]
       },
       "returns": "handle_summary"

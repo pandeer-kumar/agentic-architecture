@@ -7,7 +7,7 @@
   "tools": [
     {
       "name": "zendesk_tickets_search_to_resultset",
-      "description": "Run a Zendesk search query and store ALL matching tickets. Uses the export search endpoint (cursor pagination) so results are not capped at 1,000. Returns a handle summary.",
+      "description": "Store ALL Zendesk tickets matching a search query inside the frozen time window of the query spec. Write the query WITHOUT date terms; the connector adds them, uses the export search endpoint (cursor pagination, no 1,000 cap) and checks the result count.",
       "risk_tier": "read",
       "annotations": {
         "readOnlyHint": true,
@@ -24,43 +24,19 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "query_spec_id": {
+            "type": "string"
+          },
           "query": {
             "type": "string"
           },
-          "window": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "start_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "end_utc": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "field": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "start_utc",
-              "end_utc",
-              "field"
-            ]
-          },
           "max_records": {
             "type": "integer"
-          },
-          "query_spec_id": {
-            "type": "string"
           }
         },
         "required": [
-          "query",
-          "window",
-          "max_records",
-          "query_spec_id"
+          "query_spec_id",
+          "query"
         ]
       },
       "returns": "handle_summary"

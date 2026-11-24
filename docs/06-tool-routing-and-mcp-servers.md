@@ -120,12 +120,13 @@ finds network changes with no ticket.
 ### 6.1 `jira`
 
 - **Build:** custom-built (Jira Cloud REST v3: enhanced JQL search, approximate-count, issue APIs)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** OAuth 2.0 (3LO) per user; service account for scheduled jobs
 - **Rate limiting:** gateway token bucket, honour Retry-After on 429
 
 | Tool | Risk | Bulk → record store | Key inputs | Purpose |
 |---|---|---|---|---|
-| `jira_issues_search_to_resultset` | read | yes | `jql`, `fields`, `window`, `max_records`, `query_spec_id` | Run a JQL search and store ALL matching issues in the record store. |
+| `jira_issues_search_to_resultset` | read | yes | `query_spec_id`, `jql`, `fields`, `max_records` | Store ALL Jira issues matching a JQL filter inside the frozen time window of the query spec. |
 | `jira_issues_count_approx` | read |  | `jql` | Approximate count for a JQL query (Jira approximate-count). |
 | `jira_issue_get` | read |  | `issue_key`, `response_format`, `include_comments` | Fetch one issue by key with resolved human-readable fields. |
 | `jira_fields_list` | read |  | `project_key` | List field ids, names and types available in a project (use before writing JQL with custom fields). |
@@ -137,12 +138,13 @@ finds network changes with no ticket.
 ### 6.2 `zendesk`
 
 - **Build:** custom-built (Zendesk Support REST: export search, search count, tickets, comments)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** OAuth 2.0 per user; API token for service account
 - **Rate limiting:** account limit per plan; search export 100 req/min; honour Retry-After
 
 | Tool | Risk | Bulk → record store | Key inputs | Purpose |
 |---|---|---|---|---|
-| `zendesk_tickets_search_to_resultset` | read | yes | `query`, `window`, `max_records`, `query_spec_id` | Run a Zendesk search query and store ALL matching tickets. |
+| `zendesk_tickets_search_to_resultset` | read | yes | `query_spec_id`, `query`, `max_records` | Store ALL Zendesk tickets matching a search query inside the frozen time window of the query spec. |
 | `zendesk_tickets_count` | read |  | `query` | Exact result count for a search query (search count endpoint). |
 | `zendesk_ticket_get` | read |  | `ticket_id`, `response_format`, `include_comments` | Fetch one ticket; detailed includes comments (public and internal flagged). |
 | `zendesk_ticket_comment_add` | medium |  | `ticket_id`, `body`, `public` | Propose a comment. |
@@ -152,6 +154,7 @@ finds network changes with no ticket.
 ### 6.3 `sharepoint`
 
 - **Build:** custom-built (Microsoft Graph: search, drive items, lists)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** Entra ID delegated (on-behalf-of) per user; Sites.Selected for service account
 - **Rate limiting:** Graph throttling; honour Retry-After
 
@@ -166,6 +169,7 @@ finds network changes with no ticket.
 ### 6.4 `postgres`
 
 - **Build:** custom-built (read-only role on a reporting replica; READ ONLY transactions, statement_timeout)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** DB role itsm_agent_ro via vault; statement_timeout 15s
 - **Rate limiting:** max 4 concurrent queries per job
 
@@ -179,6 +183,7 @@ finds network changes with no ticket.
 ### 6.5 `genie`
 
 - **Build:** custom-built (Databricks Genie Conversation API: start conversation, poll message, fetch query result)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** Entra ID / Databricks OAuth (on-behalf-of user)
 - **Rate limiting:** Conversation API is low-QPS (best-effort, ~5 questions/min on the free tier; only POSTs count); gateway queue + 409/429 handling
 
@@ -190,24 +195,26 @@ finds network changes with no ticket.
 ### 6.6 `analyzer`
 
 - **Build:** custom-built (deterministic computation over the record store)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** in-process / streamable-http · **Auth:** platform internal (job-scoped token)
 - **Rate limiting:** n/a
 
 | Tool | Risk | Bulk → record store | Key inputs | Purpose |
 |---|---|---|---|---|
 | `analyzer_resultset_describe` | read |  | `handle` | Row count, columns, completeness proof and field value distributions of a handle. |
-| `analyzer_records_sample` | read |  | `handle`, `n`, `filters`, `fields` | Return up to 25 records (fenced, sanitised) from a handle, optionally filtered. |
-| `analyzer_resultset_filter` | read |  | `handle`, `filters` | Create a new handle with rows matching structured filters (field op value). |
+| `analyzer_records_sample` | read |  | `handle`, `n`, `filters`, `label_filter` | Return up to 25 records (fenced, sanitised) from a handle, optionally filtered. |
+| `analyzer_resultset_filter` | read |  | `handle`, `filters`, `label_filter` | Create a new handle with rows matching structured filters (field op value). |
 | `analyzer_resultset_union` | read |  | `handles`, `dedupe_key` | Union handles and dedupe by a key expression (e.g. normalised change number). |
-| `analyzer_resultset_join` | read |  | `left`, `right`, `left_key`, `right_key`, `mode` | Join two handles on keys; returns matched / left-only / right-only handles and counts. |
+| `analyzer_resultset_join` | read |  | `left`, `right`, `left_key`, `right_key` | Join two handles on keys; returns matched / left-only / right-only handles and counts. |
 | `analyzer_classify` | low |  | `handle`, `rubric_id`, `only_undecided` | Run the batched map phase over a handle with a versioned rubric. |
-| `analyzer_aggregate` | read |  | `handle`, `filters`, `group_by`, `metric`, `metric_field`, `label_filter` | Compute a fact: count/sum/min/max/count_distinct grouped by fields, over a handle and optional label filter. |
-| `analyzer_list_create` | read |  | `handle`, `filters`, `columns`, `sort` | Define a rendered list (placeholder L-n) over a handle: filters, columns, sort. |
-| `analyzer_export` | low |  | `source_id`, `format` | Export a handle or list to CSV or XLSX; returns a download link valid for 24h. |
+| `analyzer_aggregate` | read |  | `handle`, `metric`, `filters`, `group_by`, `metric_field`, `label_filter`, `description` | Compute a fact: count/sum/min/max/count_distinct grouped by fields, over a handle and optional label filter. |
+| `analyzer_list_create` | read |  | `handle`, `columns`, `filters`, `label_filter`, `sort` | Define a rendered list (placeholder {{list:L-n}}) over a handle: columns, structured filters, optional label filter and sort. |
+| `analyzer_export` | low |  | `list_key`, `format` | Export a handle or list to CSV or XLSX; returns a download link valid for 24h. |
 
 ### 6.7 `confluence`
 
 - **Build:** custom-built (Confluence Cloud REST: CQL search, page content)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** OAuth 2.0 (3LO) per user
 - **Rate limiting:** Atlassian limits; honour Retry-After
 
@@ -220,12 +227,13 @@ finds network changes with no ticket.
 ### 6.8 `servicenow`
 
 - **Build:** custom-built (Table API, CMDB relationship API)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** OAuth 2.0 per user; integration user for scheduled jobs
 - **Rate limiting:** instance rate-limit rules; honour 429
 
 | Tool | Risk | Bulk → record store | Key inputs | Purpose |
 |---|---|---|---|---|
-| `servicenow_records_search_to_resultset` | read | yes | `table`, `encoded_query`, `fields`, `window`, `max_records`, `query_spec_id` | Store ALL records of a table matching an encoded query in the record store (offset pagination ordered by sys_id; X-Total-Count reconciled). |
+| `servicenow_records_search_to_resultset` | read | yes | `query_spec_id`, `table`, `encoded_query`, `fields`, `max_records` | Store ALL records of a table matching an encoded query inside the frozen time window of the query spec. |
 | `servicenow_record_get` | read |  | `table`, `number_or_sys_id`, `response_format` | Fetch one record by number or sys_id with display values. |
 | `servicenow_change_approvals_to_resultset` | read | yes | `change_handle` | Store approval records (sysapproval_approver) for all change requests in a handle. |
 | `servicenow_ci_relations_get` | read |  | `ci_sys_id`, `depth` | Upstream/downstream CMDB relationships of a CI up to depth 3. |
@@ -236,6 +244,7 @@ finds network changes with no ticket.
 ### 6.9 `teams`
 
 - **Build:** custom-built (Microsoft Graph channel messages; destinations allow-listed)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** Entra ID app (ChannelMessage.Send via RSC) 
 - **Rate limiting:** Graph throttling
 
@@ -248,6 +257,7 @@ finds network changes with no ticket.
 ### 6.10 `azure_monitor`
 
 - **Build:** custom-built (Azure Resource Manager Activity Log + Log Analytics query API)
+- **Implementation status:** phase 2 (contract only)
 - **Transport:** streamable-http · **Auth:** Managed identity with Reader + Log Analytics Reader
 - **Rate limiting:** ARM / Log Analytics throttling
 
@@ -263,7 +273,7 @@ Not MCP; implemented inside the agent runtime.
 
 | Tool | Roles | Purpose |
 |---|---|---|
-| `plan_query_spec` | orchestrator | Emit the QuerySpec for this request. |
+| `plan_query_spec` | orchestrator | Freeze the plan for this request. |
 | `ledger_update` | orchestrator | Change the status or notes of one step of the current job's ledger. |
 | `scratchpad_write` | orchestrator, explorer | Append a typed scratchpad entry (finding, hypothesis, open_question, decision, todo, warning). |
 | `request_tools` | orchestrator, explorer | Ask for tools that are not in this epoch's tool set, by capability. |
@@ -271,18 +281,21 @@ Not MCP; implemented inside the agent runtime.
 | `memory_search` | orchestrator, explorer | Search active long-term memory (hybrid vector + full text) beyond what was pre-loaded. |
 | `memory_propose` | orchestrator | Propose a long-term memory item. |
 | `memory_flag_conflict` | orchestrator | Report that live data contradicts a memory item; lowers its confidence and opens a review. |
+| `submit_answer` | orchestrator | Submit the final answer draft. |
 
 ## 7. Worked tool inputs (for the trickiest tools)
 
 Tools with query languages carry short worked examples in their descriptions (worked examples
-measurably improve parameter accuracy for complex inputs):
+measurably improve parameter accuracy for complex inputs). Bulk tools never take dates: they take the
+frozen `query_spec_id`, and the connector adds the time window in the source's own syntax, so the
+model cannot get the window wrong:
 
 | Tool | Example input |
 |---|---|
-| `jira_issues_search_to_resultset` | `{"jql": "project = NET AND issuetype = Change AND resolutiondate >= \"2026-11-22 14:30\" AND resolutiondate < \"2026-11-23 14:30\" ORDER BY key", "fields": ["summary","status","components","resolutiondate"], "window": {"start_utc": "2026-11-22T09:00:00Z", "end_utc": "2026-11-23T09:00:00Z", "field": "resolutiondate"}, "max_records": 2000, "query_spec_id": "qs_01HZX3"}` |
-| `zendesk_tickets_search_to_resultset` | `{"query": "type:ticket tags:vpn updated>=2026-11-22T09:00:00Z updated<2026-11-23T09:00:00Z", "window": {"start_utc": "2026-11-22T09:00:00Z", "end_utc": "2026-11-23T09:00:00Z", "field": "updated_at"}, "max_records": 2000, "query_spec_id": "qs_01HZX4"}` |
-| `servicenow_records_search_to_resultset` | `{"table": "change_request", "encoded_query": "closed_at>=2026-11-22 09:00:00^closed_at<2026-11-23 09:00:00^ORDERBYsys_id", "fields": ["number","short_description","approval","closed_at"], "window": {"start_utc": "2026-11-22T09:00:00Z", "end_utc": "2026-11-23T09:00:00Z", "field": "closed_at"}, "max_records": 2000, "query_spec_id": "qs_01HZX3"}` |
-| `analyzer_aggregate` | `{"handle": "rs_01HZX3KC", "filters": [{"field": "approval", "op": "neq", "value": "approved"}], "group_by": ["assignment_group"], "metric": "count", "label_filter": "network_change_v3:network_change"}` |
+| `jira_issues_search_to_resultset` | `{"query_spec_id": "qs_01HZX3", "jql": "project = NET AND issuetype = Change", "fields": ["summary","status","components","resolutiondate"], "max_records": 2000}` |
+| `zendesk_tickets_search_to_resultset` | `{"query_spec_id": "qs_01HZX4", "query": "type:ticket tags:vpn", "max_records": 2000}` |
+| `servicenow_records_search_to_resultset` | `{"query_spec_id": "qs_01HZX3", "table": "change_request", "encoded_query": "category=network", "fields": ["number","short_description","approval","closed_at"], "max_records": 2000}` |
+| `analyzer_aggregate` | `{"handle": "rs_01HZX3KC", "filters": [{"field": "approval", "op": "neq", "value": "approved"}], "group_by": ["assignment_group"], "metric": "count", "label_filter": "network_change_v3:network_change", "description": "network changes without approved CAB, by assignment group"}` |
 
 Exact vendor query syntax (Zendesk date operators, ServiceNow encoded-query time zone, JQL date
 format) is confirmed against each vendor's reference during the build; connector contract tests catch drift.

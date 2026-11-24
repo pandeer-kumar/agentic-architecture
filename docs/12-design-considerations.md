@@ -108,7 +108,7 @@ measurement in build/pilot · **Open** = needs a decision from you or a stakehol
 
 | Phase | Scope | Exit criterion |
 |---|---|---|
-| 1 | Read-only Q&A over Jira + ServiceNow; bulk pipeline; triple check; context engine; short-term memory | `golden_counts` 100 %, rubric F1 ≥ 0.95, Scale-2000 passes |
+| 1 | Read-only Q&A over Jira + ServiceNow (+ Zendesk); bulk pipeline; triple check; context engine; short-term memory; approved writes | **Built** (doc 15). Remaining exit criteria need real data: rubric F1 on labelled records, live acceptance check |
 | 2 | + Zendesk, SharePoint, Confluence, Azure Monitor, Postgres, Genie; long-term memory with review | Cross-system suite passes; memory review workflow live |
 | 3 | Writes with approvals; Teams notifications | Red-team suite passes; 0 unapproved writes in pilot |
 | 4 | MCP auto-onboarding; scheduled reports | First third-party server onboarded through the full lifecycle |

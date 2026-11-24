@@ -55,56 +55,10 @@
         "additionalProperties": false,
         "properties": {
           "handle": {
-            "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
+            "type": "string"
           },
           "n": {
             "type": "integer"
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "fields": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "handle",
-          "n",
-          "filters",
-          "fields"
-        ]
-      },
-      "returns": "records"
-    },
-    {
-      "name": "analyzer_resultset_filter",
-      "description": "Create a new handle with rows matching structured filters (field op value).",
-      "risk_tier": "read",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "bulk_to_resultset": false,
-      "allowed_roles": [
-        "orchestrator",
-        "explorer"
-      ],
-      "input_schema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "handle": {
-            "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
           },
           "filters": {
             "type": "array",
@@ -139,6 +93,90 @@
                 "value"
               ]
             }
+          },
+          "label_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "handle",
+          "n"
+        ]
+      },
+      "returns": "records"
+    },
+    {
+      "name": "analyzer_resultset_filter",
+      "description": "Create a new handle with rows matching structured filters (field op value).",
+      "risk_tier": "read",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "bulk_to_resultset": false,
+      "allowed_roles": [
+        "orchestrator",
+        "explorer"
+      ],
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "in",
+                    "not_in",
+                    "contains",
+                    "gte",
+                    "lt",
+                    "is_null",
+                    "not_null"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "op",
+                "value"
+              ]
+            }
+          },
+          "label_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -205,34 +243,23 @@
         "additionalProperties": false,
         "properties": {
           "left": {
-            "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
+            "type": "string"
           },
           "right": {
-            "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
+            "type": "string"
           },
           "left_key": {
             "type": "string"
           },
           "right_key": {
             "type": "string"
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "inner",
-              "left",
-              "full"
-            ]
           }
         },
         "required": [
           "left",
           "right",
           "left_key",
-          "right_key",
-          "mode"
+          "right_key"
         ]
       },
       "returns": "3 handles + counts"
@@ -294,8 +321,17 @@
         "additionalProperties": false,
         "properties": {
           "handle": {
+            "type": "string"
+          },
+          "metric": {
             "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
+            "enum": [
+              "count",
+              "count_distinct",
+              "sum",
+              "min",
+              "max"
+            ]
           },
           "filters": {
             "type": "array",
@@ -337,33 +373,41 @@
               "type": "string"
             }
           },
-          "metric": {
-            "type": "string",
-            "enum": [
-              "count",
-              "count_distinct",
-              "sum",
-              "min",
-              "max"
+          "metric_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "metric_field": {
-            "type": "string"
-          },
           "label_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
             "type": "string"
           }
         },
         "required": [
           "handle",
-          "metric"
+          "metric",
+          "description"
         ]
       },
       "returns": "fact {fact_id, value, sql}"
     },
     {
       "name": "analyzer_list_create",
-      "description": "Define a rendered list (placeholder L-n) over a handle: filters, columns, sort. The renderer expands it from the database.",
+      "description": "Define a rendered list (placeholder {{list:L-n}}) over a handle: columns, structured filters, optional label filter and sort. The renderer expands it from the database, so lists are exact by construction.",
       "risk_tier": "read",
       "annotations": {
         "readOnlyHint": true,
@@ -381,14 +425,7 @@
         "additionalProperties": false,
         "properties": {
           "handle": {
-            "type": "string",
-            "description": "Result-set handle, e.g. rs_01HZX3K9"
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "string"
           },
           "columns": {
             "type": "array",
@@ -396,15 +433,64 @@
               "type": "string"
             }
           },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "eq",
+                    "neq",
+                    "in",
+                    "not_in",
+                    "contains",
+                    "gte",
+                    "lt",
+                    "is_null",
+                    "not_null"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "op",
+                "value"
+              ]
+            }
+          },
+          "label_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sort": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "handle",
-          "filters",
-          "columns",
-          "sort"
+          "columns"
         ]
       },
       "returns": "list id"
@@ -427,19 +513,18 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "source_id": {
+          "list_key": {
             "type": "string"
           },
           "format": {
             "type": "string",
             "enum": [
-              "csv",
-              "xlsx"
+              "csv"
             ]
           }
         },
         "required": [
-          "source_id",
+          "list_key",
           "format"
         ]
       },

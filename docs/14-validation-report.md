@@ -16,6 +16,8 @@ is still unverified. Every check is reproducible from the repository.
 | 7 | All 14 diagrams generated as SVG and rendered to PNG; each inspected visually | `diagrams/src/diagrams.py`, `render.js` | **14 / 14** |
 | 8 | Context budgets: ARCHITECTURE §7.2 = doc 01 §3.1 = diagram, total 120k | `check_docs.py` K8 | **Pass** |
 | 9 | Config files parse | `yaml.safe_load` on `contracts/policies/*.yaml` | **Pass** |
+| 10 | Phase-1 implementation test suite (real SDK → fake Claude API, real connectors → fake vendor APIs, real PostgreSQL) | `pytest` | **40 / 40 pass** |
+| 11 | Container: image build, `docker compose up`, health check, demo answer inside the container | `docker compose` | **Pass** (228 / 37, verified) |
 
 ## 2. Database invariant tests (92)
 

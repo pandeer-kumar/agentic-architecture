@@ -6,7 +6,7 @@ test plans); they never introduce components that are not described here.
 
 | | |
 |---|---|
-| Status | Design baseline v2 (validated: schema, contracts, simulation, diagrams; see §19) |
+| Status | Design baseline v2 + **working Phase-1 implementation** in `src/itsm_agent/` (40 tests; see §19 and doc 15) |
 | Scope | Single organisation, self-hosted, everything custom-built; Claude used for inference only |
 | Primary goals | **Accuracy** and **bulk result processing** (100–2,000 records per question) |
 
@@ -350,6 +350,7 @@ and governance), with the decision and status of each, is in **doc 12**. Top ris
 | Tool contracts (10 servers) and doc ↔ contract sync | see doc 14 |
 | Map-phase fault-injection simulation at 2,000 records | see doc 14 |
 | Every diagram rendered from source as an image | see doc 14 |
+| Phase-1 implementation: end-to-end exact answers at 513 and 1,964 records, fault injection, epoch resets, crash resume, approvals, MCP, API, Docker | see doc 15 §3 |
 
 ## Document map
 
@@ -369,3 +370,4 @@ and governance), with the decision and status of each, is in **doc 12**. Top ris
 | [12 Design considerations](docs/12-design-considerations.md) | Everything to consider, with decision and status |
 | [13 Research basis](docs/13-research-basis.md) | Sources and what each changed in the design |
 | [14 Validation report](docs/14-validation-report.md) | What was executed and the results |
+| [15 Implementation](docs/15-implementation.md) | How to run it, code map, what is built and not yet built, first-run checklist |

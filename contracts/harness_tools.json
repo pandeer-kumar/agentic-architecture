@@ -6,7 +6,7 @@
       "roles": [
         "orchestrator"
       ],
-      "description": "Emit the QuerySpec for this request. The harness resolves relative time to an absolute UTC window, validates sources and fields, and freezes it.",
+      "description": "Freeze the plan for this request. Give the relative window exactly as the user said it (e.g. 'last 24 hours', 'yesterday', 'last 7 days') or ISO start/end; the harness resolves it ONCE to an absolute UTC window in the user's time zone. Returns query_spec_id to pass to every bulk search tool.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -18,48 +18,23 @@
             "type": "string"
           },
           "window_field": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "resolved",
+              "closed"
+            ]
           },
-          "sources": {
+          "systems": {
             "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "system": {
-                  "type": "string",
-                  "enum": [
-                    "jira",
-                    "zendesk",
-                    "servicenow",
-                    "sharepoint",
-                    "confluence",
-                    "postgres",
-                    "genie",
-                    "azure_monitor"
-                  ]
-                },
-                "query": {
-                  "type": "string"
-                },
-                "fields": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "required": [
-                "system",
-                "query",
-                "fields"
+              "type": "string",
+              "enum": [
+                "jira",
+                "servicenow",
+                "zendesk"
               ]
-            }
-          },
-          "structured_criteria": {
-            "type": "array",
-            "items": {
-              "type": "string"
             }
           },
           "rubric_id": {
@@ -77,8 +52,7 @@
           "intent",
           "relative_window",
           "window_field",
-          "sources",
-          "structured_criteria",
+          "systems",
           "rubric_id"
         ]
       }
@@ -323,6 +297,82 @@
           "memory_id",
           "evidence_refs",
           "note"
+        ]
+      }
+    },
+    {
+      "name": "submit_answer",
+      "roles": [
+        "orchestrator"
+      ],
+      "description": "Submit the final answer draft. narrative_md may use placeholders {{F-n}} (fact value) and {{list:L-n}} (rendered table). Every claim must reference fact keys (F-n) or records (rec:<system>:<id>). Numbers must come from facts.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "narrative_md": {
+            "type": "string"
+          },
+          "claims": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "claim_id": {
+                  "type": "string"
+                },
+                "claim_type": {
+                  "type": "string",
+                  "enum": [
+                    "numeric",
+                    "attribute",
+                    "existence",
+                    "absence",
+                    "causal",
+                    "recommendation"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "claim_id",
+                "claim_type",
+                "text",
+                "value",
+                "refs"
+              ]
+            }
+          },
+          "caveats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "narrative_md",
+          "claims",
+          "caveats"
         ]
       }
     }

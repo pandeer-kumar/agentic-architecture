@@ -5,6 +5,14 @@ acts across Jira, Zendesk, ServiceNow, SharePoint, Confluence, PostgreSQL, Datab
 Azure Monitor, built for **accuracy** and for **bulk results of 100–2,000 records**.
 
 **Start here → [ARCHITECTURE.md](ARCHITECTURE.md)** — the single, complete architecture.
+**Run it → [docs/15-implementation.md](docs/15-implementation.md)** — working Phase-1 implementation in `src/itsm_agent/`.
+
+```bash
+cp .env.example .env               # add ANTHROPIC_API_KEY (or use --fake-model below)
+docker compose up -d --build
+docker compose exec app itsm-agent demo --fake-model   # offline end-to-end demo with known answers
+pytest                                                  # 40 tests (needs ITSM_TEST_ADMIN_URL for PostgreSQL)
+```
 The [`docs/`](docs/) folder explains each part in depth; it adds detail, never new components.
 
 ![Component architecture](diagrams/arch_02_components.png)
@@ -23,6 +31,9 @@ The [`docs/`](docs/) folder explains each part in depth; it adds detail, never n
 | `contracts/harness_tools.json` | Harness-native tools (scratchpad, ledger, request_tools, memory) |
 | `contracts/policies/*.yaml` | Model routing and tool risk policy |
 | `validation/` | Scripts that validate schema, contracts, docs, diagrams and the map-phase design |
+| `src/itsm_agent/` | The implementation (harness, context engine, memory, data plane, tools, connectors, API, CLI, MCP servers) |
+| `tests/` | End-to-end and unit tests |
+| `Dockerfile`, `docker-compose.yml`, `.env.example` | Run it |
 
 ## Re-run the validation
 
